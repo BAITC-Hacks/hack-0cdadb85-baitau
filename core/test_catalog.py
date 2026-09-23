@@ -74,6 +74,19 @@ class SharedCatalogTests(unittest.TestCase):
                 self.assertEqual(result, run_pipeline(query, self.catalog[::-1]))
                 self.assertEqual(result["meta"]["catalog_candidates"], 8)
 
+    def test_demo_date_change_is_caused_by_busy_dates(self):
+        day_a, day_b = "2026-11-14", "2026-11-15"
+        ids_a = [c["id"] for c in run_pipeline(request(date=day_a), self.catalog)["results"]]
+        ids_b = [c["id"] for c in run_pipeline(request(date=day_b), self.catalog)["results"]]
+        self.assertEqual(set(ids_a) - set(ids_b), {"HK-76268"})
+        contractor = next(c for c in self.catalog if c["id"] == "HK-76268")
+        self.assertNotIn(day_a, contractor["busy_dates"])
+        self.assertIn(day_b, contractor["busy_dates"])
+        available = dict(contractor, busy_dates=[d for d in contractor["busy_dates"] if d != day_b])
+        catalog = [available if c["id"] == contractor["id"] else c for c in self.catalog]
+        restored = run_pipeline(request(date=day_b), catalog)
+        self.assertEqual([c["id"] for c in restored["results"]], ids_a)
+
     def test_every_busy_date_excludes_contractor(self):
         for row in self.catalog:
             for day in row["busy_dates"]:
