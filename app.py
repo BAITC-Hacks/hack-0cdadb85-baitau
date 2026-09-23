@@ -33,11 +33,17 @@ if PROJECT_ROOT not in sys.path:
 try:
     from helpers.utils import (
         load_contractors as helpers_load_contractors,
+        load_all_contractors as helpers_load_all_contractors,
+        save_feature_contractor as helpers_save_feature_contractor,
+        generate_feature_id as helpers_generate_feature_id,
         safe_pipeline_call as helpers_safe_pipeline_call,
         load_mock_data as helpers_load_mock_data,
     )
 except ImportError:
     helpers_load_contractors = None
+    helpers_load_all_contractors = None
+    helpers_save_feature_contractor = None
+    helpers_generate_feature_id = None
     helpers_safe_pipeline_call = None
     helpers_load_mock_data = None
 
@@ -267,6 +273,52 @@ def load_contractors() -> list[dict]:
                 pass
 
     return DEFAULT_CONTRACTORS
+
+
+def generate_feature_id() -> str:
+    """Generate unique ID adhering to dataset conventions."""
+    if helpers_generate_feature_id is not None:
+        try:
+            return helpers_generate_feature_id()
+        except Exception:
+            pass
+    import random
+    return f"USR-{random.randint(1, 99999):05d}"
+
+
+def save_feature_contractor(contractor: dict) -> dict:
+    """Save contractor via helpers API if present, otherwise into session_state."""
+    if helpers_save_feature_contractor is not None:
+        try:
+            return helpers_save_feature_contractor(contractor)
+        except Exception:
+            pass
+
+    if "feature_contractors" not in st.session_state:
+        st.session_state.feature_contractors = []
+    st.session_state.feature_contractors.insert(0, contractor)
+    return contractor
+
+
+def load_all_contractors() -> list[dict]:
+    """Load all contractors: base catalog + newly created feature contractors."""
+    if helpers_load_all_contractors is not None:
+        try:
+            data = helpers_load_all_contractors()
+            if data and isinstance(data, list):
+                return data
+        except Exception:
+            pass
+
+    base = load_contractors()
+    feature = st.session_state.get("feature_contractors", [])
+    seen_ids = set()
+    combined = []
+    for c in feature + base:
+        if c.get("id") not in seen_ids:
+            seen_ids.add(c.get("id"))
+            combined.append(c)
+    return combined
 
 
 def load_mock_data(req: Optional[dict] = None) -> dict:
@@ -836,6 +888,211 @@ def build_request_form(contractors: list[dict]) -> tuple[dict, bool]:
 
 
 # -----------------------------------------------------------------------------
+# Role Selector & Marketplace Flows
+# -----------------------------------------------------------------------------
+def render_role_selector() -> str:
+    """Render toggle between Customer and Contractor roles."""
+    if "current_role" not in st.session_state:
+        st.session_state.current_role = "Заказчик"
+
+    col_role, _ = st.columns([1, 1])
+    with col_role:
+        st.write("**Выберите вашу роль на платформе:**")
+        role_options = ["Заказчик (подбор специалистов)", "Подрядчик (регистрация профиля)"]
+        curr_idx = 0 if "Заказчик" in st.session_state.current_role else 1
+        selected = st.radio(
+            "Роль пользователя",
+            options=role_options,
+            index=curr_idx,
+            horizontal=True,
+            label_visibility="collapsed",
+            key="role_radio_select",
+        )
+        role = "Заказчик" if "Заказчик" in selected else "Подрядчик"
+        st.session_state.current_role = role
+        return role
+
+
+def render_contractor_form(available_categories: list[str]) -> None:
+    """Render structured registration form for event professionals."""
+    if st.session_state.get("contractor_registered"):
+        last = st.session_state.get("last_contractor", {})
+        st.success(f"✅ Профиль «{last.get('anon_name')}» успешно добавлен!")
+
+        tags_str = ", ".join(last.get("categories", []))
+        langs_str = ", ".join(last.get("languages", []))
+        price_str = format_kzt(last.get("price_from_kzt", 0))
+        hours_str = f"до {last['max_hours']} ч" if last.get("max_hours") else "без привязки ко времени"
+
+        card_html = dedent(f"""
+        <div class="contractor-card">
+            <div class="card-header-row">
+                <div>
+                    <h3 class="contractor-name">{last.get('anon_name')}</h3>
+                    <div class="contractor-sub">{tags_str} · {last.get('city')}</div>
+                </div>
+                <div>
+                    <span class="badge-synthetic">🤖 Новый профиль</span>
+                </div>
+            </div>
+            <div>
+                <span class="badge-price">от {price_str}</span>
+            </div>
+            <div>
+                <span class="badge-tag">🗣️ {langs_str}</span>
+                <span class="badge-tag">⏱️ {hours_str}</span>
+                <span class="badge-tag">🆔 {last.get('id')}</span>
+            </div>
+            <div style="margin-top: 10px; font-size: 0.95rem; color: var(--text-color, #1e293b);">
+                {last.get('description')}
+            </div>
+        </div>
+        """).strip()
+        render_html(card_html)
+
+        col_b1, col_b2 = st.columns([1, 1])
+        with col_b1:
+            if st.button("🔍 Перейти к подбору как заказчик", type="primary", use_container_width=True):
+                st.session_state.current_role = "Заказчик"
+                st.session_state.contractor_registered = False
+                st.rerun()
+        with col_b2:
+            if st.button("➕ Добавить ещё одного подрядчика", type="secondary", use_container_width=True):
+                st.session_state.contractor_registered = False
+                st.rerun()
+        return
+
+    st.subheader("Регистрация профиля подрядчика")
+    st.caption("Укажите данные о ваших услугах, чтобы участвовать в AI-подборе для заказчиков")
+
+    with st.form("contractor_registration_form"):
+        name = st.text_input("Название компании / Имя мастера*", placeholder="Например: Nova Photo")
+
+        col1, col2 = st.columns(2)
+        with col1:
+            city = st.selectbox("Город базирования*", options=CITIES, index=0)
+        with col2:
+            price_from_kzt = st.number_input(
+                "Стоимость услуг от (₸)*",
+                min_value=1000,
+                max_value=20000000,
+                value=180000,
+                step=10000,
+                format="%d",
+            )
+            st.caption(f"Будет показано как: **{format_kzt(price_from_kzt)}**")
+
+        default_cat = ["Фотограф"] if "Фотограф" in available_categories else [available_categories[0]]
+        categories = st.multiselect(
+            "Категории услуг*",
+            options=available_categories,
+            default=default_cat,
+        )
+
+        col3, col4 = st.columns(2)
+        with col3:
+            event_formats = st.multiselect(
+                "Форматы мероприятий*",
+                options=EVENT_FORMATS,
+                default=["свадьба"],
+            )
+        with col4:
+            languages = st.multiselect(
+                "Языки ведения / общения*",
+                options=["русский", "казахский", "английский"],
+                default=["русский"],
+            )
+
+        no_hour_limit = st.checkbox("Работа не привязана к присутствию на площадке", value=False)
+        if not no_hour_limit:
+            max_hours = st.number_input(
+                "Максимум часов на заказ (длительность)*",
+                min_value=1,
+                max_value=24,
+                value=8,
+                step=1,
+            )
+        else:
+            max_hours = None
+
+        description = st.text_area(
+            "Описание услуг и специализации*",
+            value="Свадебная и репортажная фотография",
+            placeholder="Опишите опыт, стиль и ключевые преимущества...",
+        )
+
+        st.info("ℹ️ Календарь занятости можно будет настроить позже. При создании профиль считается доступным на все даты.")
+
+        submitted = st.form_submit_button("Зарегистрировать подрядчика", type="primary", use_container_width=True)
+
+    if submitted:
+        # Strict validation UX
+        errors = []
+        if not name or not name.strip():
+            errors.append("Укажите название или имя подрядчика.")
+        if not city:
+            errors.append("Выберите город.")
+        if not categories:
+            errors.append("Выберите хотя бы одну категорию услуг.")
+        if price_from_kzt <= 0:
+            errors.append("Стоимость услуг должна быть больше нуля.")
+        if not event_formats:
+            errors.append("Выберите хотя бы один формат мероприятий.")
+        if not languages:
+            errors.append("Выберите хотя бы один рабочий язык.")
+        if not description or not description.strip():
+            errors.append("Укажите описание услуг.")
+        if not no_hour_limit and (max_hours is None or max_hours < 1):
+            errors.append("Укажите корректный лимит часов или отметьте отсутствие привязки к площадке.")
+
+        if errors:
+            for err in errors:
+                st.error(f"⚠️ {err}")
+            return
+
+        new_contractor = {
+            "id": generate_feature_id(),
+            "anon_name": name.strip(),
+            "categories": list(categories),
+            "city": city,
+            "price_from_kzt": int(price_from_kzt),
+            "event_formats": list(event_formats),
+            "languages": list(languages),
+            "max_hours": int(max_hours) if max_hours is not None else None,
+            "busy_dates": [],
+            "description": description.strip(),
+            "synthetic": True,
+            "city_imputed": False,
+            "price_imputed": False,
+        }
+
+        save_feature_contractor(new_contractor)
+        st.session_state.contractor_registered = True
+        st.session_state.last_contractor = new_contractor
+        st.rerun()
+
+
+def render_contractor_flow(available_categories: list[str]) -> None:
+    """Render contractor flow screen."""
+    render_contractor_form(available_categories)
+
+
+def render_customer_flow(contractors: list[dict]) -> None:
+    """Render customer flow screen: structured search and recommendation display."""
+    request_data, submitted = build_request_form(contractors)
+
+    if submitted:
+        with st.spinner("Проверяем доступность и подбираем варианты..."):
+            result = safe_pipeline_call(run_pipeline, request_data, contractors)
+            st.session_state.result = result
+            st.session_state.last_request = request_data
+
+    if st.session_state.result is not None:
+        st.divider()
+        render_result(st.session_state.result, st.session_state.last_request)
+
+
+# -----------------------------------------------------------------------------
 # Main Application Entrypoint
 # -----------------------------------------------------------------------------
 def main():
@@ -846,20 +1103,38 @@ def main():
         st.session_state.result = None
     if "last_request" not in st.session_state:
         st.session_state.last_request = None
+    if "feature_contractors" not in st.session_state:
+        st.session_state.feature_contractors = []
+    if "current_role" not in st.session_state:
+        st.session_state.current_role = "Заказчик"
+    if "contractor_registered" not in st.session_state:
+        st.session_state.contractor_registered = False
 
-    # Load Contractors
-    contractors = load_contractors()
+    # Always reload combined catalog for instant live refresh without restart
+    contractors = load_all_contractors()
 
     # Header
     st.title("Умный подбор event-подрядчиков")
-    st.caption("Найдём до 3 лучших вариантов и объясним решение по каждому кандидату")
+    st.caption("Двухсторонняя платформа: умный подбор для клиентов и регистрация исполнителей")
+
+    # Role Selector
+    role = render_role_selector()
+    st.divider()
+
+    # Dynamic categories from catalog
+    existing_categories = set()
+    for c in contractors:
+        existing_categories.update(c.get("categories", []))
+    available_categories = (
+        sorted(list(existing_categories)) if existing_categories else CATEGORIES
+    )
 
     # Sidebar: Demo scenarios guide & debug info
     with st.sidebar:
         st.markdown("### 🎯 Сценарии для жюри")
         st.markdown(
             """
-            **1. Happy Path (3 клика):**
+            **1. Happy Path (Заказчик):**
             - Алматы, 14 ноября, Свадьба, Фотограф, 400 000 ₸.
             - Нажмите «Подобрать».
             - Результат: 3 карточки с обоснованиями.
@@ -869,12 +1144,15 @@ def main():
             - Нажмите «Подобрать».
             - Выдача меняется из-за занятости конкретных мастеров!
 
-            **3. Диагностика отказа:**
+            **3. Marketplace Flow (Новый подрядчик):**
+            - Перейдите в режим **«Подрядчик»**.
+            - Создайте: **Nova Photo**, Алматы, Фотограф, 180 000 ₸, свадьба, 8 ч.
+            - Переключитесь в **«Заказчик»**.
+            - Запрос на бюджет 200 000 ₸ — Nova Photo сразу в выдаче!
+
+            **4. Диагностика отказа:**
             - Установите бюджет **50 000 ₸**.
             - Система покажет точные причины, почему никто не подошел.
-
-            **4. Отсутствие категории:**
-            - Выберите город **Зарубежье** или редкую категорию.
             """
         )
         st.markdown("---")
@@ -883,27 +1161,22 @@ def main():
         st.write(
             f"**Core Engine:** {'🟢 Подключен' if core_ready else '🟡 Режим Mock'}"
         )
-        st.write(f"**Загружено подрядчиков:** {len(contractors)}")
+        st.write(f"**Активная роль:** {role}")
+        st.write(f"**Всего подрядчиков в базе:** {len(contractors)}")
+        new_count = len(st.session_state.get("feature_contractors", []))
+        if new_count > 0:
+            st.write(f"**Новых профилей (сессия):** +{new_count}")
 
         debug_mode = st.toggle("Режим отладки (Debug)", value=False)
         if debug_mode and st.session_state.result is not None:
             st.markdown("#### Сырой ответ (JSON):")
             st.json(st.session_state.result)
 
-    # Form
-    request_data, submitted = build_request_form(contractors)
-
-    # Submission Handler
-    if submitted:
-        with st.spinner("Проверяем доступность и подбираем варианты..."):
-            result = safe_pipeline_call(run_pipeline, request_data, contractors)
-            st.session_state.result = result
-            st.session_state.last_request = request_data
-
-    # Render Results
-    if st.session_state.result is not None:
-        st.divider()
-        render_result(st.session_state.result, st.session_state.last_request)
+    # Flow Routing
+    if role == "Заказчик":
+        render_customer_flow(contractors)
+    else:
+        render_contractor_flow(available_categories)
 
 
 if __name__ == "__main__":
