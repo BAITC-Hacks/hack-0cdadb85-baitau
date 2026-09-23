@@ -1,0 +1,926 @@
+"""Smart Contractor Recommendation Engine - Streamlit UI.
+
+HackAlem AI - Laptop 3 (UI / Demo Assembly).
+Demonstrates end-to-end happy path and diagnostics in 3-4 clicks.
+"""
+
+from copy import deepcopy
+from datetime import date, datetime
+import json
+import os
+import sys
+from typing import Any, Optional
+
+import streamlit as st
+
+# Configure page metadata and layout
+st.set_page_config(
+    page_title="Умный подбор event-подрядчиков",
+    page_icon="✨",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
+
+# Ensure project root is in sys.path
+PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+
+# -----------------------------------------------------------------------------
+# Module Imports & Defensive Fallbacks
+# -----------------------------------------------------------------------------
+try:
+    from helpers.utils import (
+        load_contractors as helpers_load_contractors,
+        safe_pipeline_call as helpers_safe_pipeline_call,
+        load_mock_data as helpers_load_mock_data,
+    )
+except ImportError:
+    helpers_load_contractors = None
+    helpers_safe_pipeline_call = None
+    helpers_load_mock_data = None
+
+try:
+    from core.generator import run_pipeline
+except ImportError:
+    run_pipeline = None
+
+
+# -----------------------------------------------------------------------------
+# Default Constants (Task Specifications)
+# -----------------------------------------------------------------------------
+CITIES = ["Алматы", "Астана", "Зарубежье"]
+
+EVENT_FORMATS = [
+    "свадьба",
+    "той",
+    "корпоратив",
+    "конференция",
+    "юбилей",
+    "день рождения",
+]
+
+CATEGORIES = [
+    "Банкетный зал",
+    "Ведущий",
+    "Ведущий церемонии",
+    "Видеограф",
+    "Декоратор",
+    "Загородная площадка",
+    "Инструменталист",
+    "Лайв-бэнд",
+    "Национальный ансамбль",
+    "Отель",
+    "Подарки и сувениры",
+    "Ресторан",
+    "Танцевальный коллектив",
+    "Флорист",
+    "Фото и видеобудки",
+    "Фотограф",
+    "Шоу-программа",
+]
+
+DEFAULT_DATE = date(2026, 11, 14)
+MIN_DATE = date(2026, 9, 23)
+MAX_DATE = date(2026, 12, 31)
+
+# Default Contractors Catalog for standalone testing & fallback
+DEFAULT_CONTRACTORS = [
+    {
+        "id": "HK-101",
+        "anon_name": "Сацуки Кусакабэ",
+        "city": "Алматы",
+        "categories": ["Фотограф"],
+        "price_from_kzt": 200000,
+        "event_formats": ["свадьба", "той", "юбилей"],
+        "languages": ["русский", "казахский"],
+        "max_hours": 10,
+        "busy_dates": ["2026-11-15", "2026-12-05"],
+        "description": "Свадебная и семейная репортажная съемка",
+        "synthetic": False,
+        "city_imputed": False,
+        "price_imputed": False,
+    },
+    {
+        "id": "HK-102",
+        "anon_name": "Айдар Беков",
+        "city": "Алматы",
+        "categories": ["Фотограф"],
+        "price_from_kzt": 280000,
+        "event_formats": ["свадьба", "корпоратив", "той"],
+        "languages": ["русский"],
+        "max_hours": 12,
+        "busy_dates": ["2026-11-20", "2026-12-12"],
+        "description": "Художественная свадебная фотография и love story",
+        "synthetic": False,
+        "city_imputed": False,
+        "price_imputed": False,
+    },
+    {
+        "id": "HK-103",
+        "anon_name": "Данияр Сабитов",
+        "city": "Алматы",
+        "categories": ["Фотограф"],
+        "price_from_kzt": 350000,
+        "event_formats": ["свадьба", "той", "день рождения", "юбилей"],
+        "languages": ["русский", "казахский", "английский"],
+        "max_hours": 8,
+        "busy_dates": ["2026-11-18"],
+        "description": "Премиальная свадебная съемка с ассистентом",
+        "synthetic": True,
+        "city_imputed": False,
+        "price_imputed": False,
+    },
+    {
+        "id": "HK-104",
+        "anon_name": "Алишер Омаров",
+        "city": "Алматы",
+        "categories": ["Фотограф"],
+        "price_from_kzt": 220000,
+        "event_formats": ["свадьба", "корпоратив"],
+        "languages": ["русский", "казахский"],
+        "max_hours": 9,
+        "busy_dates": ["2026-11-14", "2026-11-25"],  # Busy on 14.11, free on 15.11
+        "description": "Динамичные кадры и быстрая цветокоррекция",
+        "synthetic": False,
+        "city_imputed": False,
+        "price_imputed": False,
+    },
+    {
+        "id": "HK-105",
+        "anon_name": "Елена Ким",
+        "city": "Алматы",
+        "categories": ["Фотограф"],
+        "price_from_kzt": 450000,  # Over 400 000 KZT budget
+        "event_formats": ["свадьба", "конференция"],
+        "languages": ["русский", "английский"],
+        "max_hours": 10,
+        "busy_dates": [],
+        "description": "Авторская фотография с журнальной ретушью",
+        "synthetic": False,
+        "city_imputed": False,
+        "price_imputed": False,
+    },
+    {
+        "id": "HK-106",
+        "anon_name": "Нурлан Сериков",
+        "city": "Алматы",
+        "categories": ["Фотограф"],
+        "price_from_kzt": 320000,
+        "event_formats": ["корпоратив", "конференция"],  # No wedding
+        "languages": ["русский"],
+        "max_hours": 6,
+        "busy_dates": [],
+        "description": "Репортажи масштабных событий",
+        "synthetic": False,
+        "city_imputed": False,
+        "price_imputed": False,
+    },
+    {
+        "id": "HK-107",
+        "anon_name": "Арман Искаков",
+        "city": "Алматы",
+        "categories": ["Ведущий"],
+        "price_from_kzt": 300000,
+        "event_formats": ["свадьба", "той", "корпоратив"],
+        "languages": ["русский", "казахский"],
+        "max_hours": 7,
+        "busy_dates": ["2026-11-14"],
+        "description": "Интеллигентный конферанс и современная программа",
+        "synthetic": False,
+        "city_imputed": False,
+        "price_imputed": False,
+    },
+    {
+        "id": "HK-108",
+        "anon_name": "Flora & Decor Studio",
+        "city": "Алматы",
+        "categories": ["Декоратор"],
+        "price_from_kzt": 250000,
+        "event_formats": ["свадьба", "той", "юбилей"],
+        "languages": ["русский", "казахский"],
+        "max_hours": None,
+        "busy_dates": [],
+        "description": "Оформление президиума и фотозон живыми цветами",
+        "synthetic": False,
+        "city_imputed": False,
+        "price_imputed": False,
+    },
+    {
+        "id": "HK-109",
+        "anon_name": "Almaty Soul Band",
+        "city": "Алматы",
+        "categories": ["Лайв-бэнд"],
+        "price_from_kzt": 380000,
+        "event_formats": ["свадьба", "корпоратив", "той"],
+        "languages": ["русский", "казахский", "английский"],
+        "max_hours": 4,
+        "busy_dates": [],
+        "description": "Живой звук, каверы мировых и казахстанских хитов",
+        "synthetic": False,
+        "city_imputed": False,
+        "price_imputed": False,
+    },
+    {
+        "id": "HK-110",
+        "anon_name": "Астана Фото Про",
+        "city": "Астана",
+        "categories": ["Фотограф"],
+        "price_from_kzt": 250000,
+        "event_formats": ["свадьба", "той", "корпоратив"],
+        "languages": ["русский", "казахский"],
+        "max_hours": 10,
+        "busy_dates": [],
+        "description": "Свадебная съемка в столице",
+        "synthetic": False,
+        "city_imputed": False,
+        "price_imputed": False,
+    },
+]
+
+
+# -----------------------------------------------------------------------------
+# Data Loader and Pipeline Wrapper
+# -----------------------------------------------------------------------------
+def load_contractors() -> list[dict]:
+    """Load contractors catalog from Laptop 2 helpers, local files, or defaults."""
+    if helpers_load_contractors is not None:
+        try:
+            data = helpers_load_contractors()
+            if data and isinstance(data, list):
+                return data
+        except Exception:
+            pass
+
+    for rel_path in ("helpers/contractors.json", "data/contractors.json"):
+        full_path = os.path.join(PROJECT_ROOT, rel_path)
+        if os.path.exists(full_path):
+            try:
+                with open(full_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    if isinstance(data, list):
+                        return data
+            except Exception:
+                pass
+
+    return DEFAULT_CONTRACTORS
+
+
+def load_mock_data(req: Optional[dict] = None) -> dict:
+    """Load mock output contract from helpers or embedded dataset."""
+    if helpers_load_mock_data is not None:
+        try:
+            return helpers_load_mock_data()
+        except Exception:
+            pass
+
+    mock_json_path = os.path.join(PROJECT_ROOT, "helpers", "mock_data.json")
+    if os.path.exists(mock_json_path):
+        try:
+            with open(mock_json_path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            pass
+
+    # Built-in fallback mock matching the exact contract
+    effective_req = req or {
+        "city": "Алматы",
+        "date": "2026-11-14",
+        "event_format": "свадьба",
+        "category": "Фотограф",
+        "budget_kzt": 400000,
+        "duration_hours": 8,
+        "language": "русский",
+    }
+    return {
+        "status": "matched",
+        "fallback": True,
+        "query": effective_req,
+        "results": [
+            {
+                "id": "HK-101",
+                "name": "Сацуки Кусакабэ",
+                "category": effective_req.get("category", "Фотограф"),
+                "city": effective_req.get("city", "Алматы"),
+                "price_from_kzt": 200000,
+                "event_formats": ["свадьба", "той"],
+                "languages": ["русский", "казахский"],
+                "max_hours": 10,
+                "description": "Свадебная и семейная репортажная съемка",
+                "synthetic": False,
+                "city_imputed": False,
+                "price_imputed": False,
+                "score": 0.85,
+                "explanation": (
+                    f"По календарю профиля свободен {effective_req['date']}; "
+                    f"город — {effective_req['city']}, категория — «{effective_req['category']}», "
+                    f"формат — «{effective_req['event_format']}». "
+                    f"Стоимость от 200 000 ₸ при бюджете 400 000 ₸ (запас к начальной цене — 200 000 ₸); "
+                    f"указан нужный язык — русский; лимит 10 ч покрывает запрошенные 8 ч."
+                ),
+            },
+            {
+                "id": "HK-102",
+                "name": "Айдар Беков",
+                "category": effective_req.get("category", "Фотограф"),
+                "city": effective_req.get("city", "Алматы"),
+                "price_from_kzt": 280000,
+                "event_formats": ["свадьба", "корпоратив", "той"],
+                "languages": ["русский"],
+                "max_hours": 12,
+                "description": "Художественная свадебная фотография и love story",
+                "synthetic": False,
+                "city_imputed": False,
+                "price_imputed": False,
+                "score": 0.74,
+                "explanation": (
+                    f"По календарю профиля свободен {effective_req['date']}; "
+                    f"город — {effective_req['city']}, категория — «{effective_req['category']}», "
+                    f"формат — «{effective_req['event_format']}». "
+                    f"Стоимость от 280 000 ₸ при бюджете 400 000 ₸ (запас к начальной цене — 120 000 ₸); "
+                    f"указан нужный язык — русский; лимит 12 ч покрывает запрошенные 8 ч."
+                ),
+            },
+            {
+                "id": "HK-103",
+                "name": "Данияр Сабитов",
+                "category": effective_req.get("category", "Фотограф"),
+                "city": effective_req.get("city", "Алматы"),
+                "price_from_kzt": 350000,
+                "event_formats": ["свадьба", "той", "день рождения", "юбилей"],
+                "languages": ["русский", "казахский", "английский"],
+                "max_hours": 8,
+                "description": "Премиальная свадебная съемка с ассистентом",
+                "synthetic": True,
+                "city_imputed": False,
+                "price_imputed": False,
+                "score": 0.65,
+                "explanation": (
+                    f"По календарю профиля свободен {effective_req['date']}; "
+                    f"город — {effective_req['city']}, категория — «{effective_req['category']}», "
+                    f"формат — «{effective_req['event_format']}». "
+                    f"Стоимость от 350 000 ₸ при бюджете 400 000 ₸ (запас к начальной цене — 50 000 ₸); "
+                    f"указан нужный язык — русский; лимит 8 ч покрывает запрошенные 8 ч."
+                ),
+            },
+        ],
+        "meta": {
+            "catalog_candidates": 3,
+            "eligible_candidates": 3,
+            "returned": 3,
+            "diagnostics": {},
+        },
+    }
+
+
+def safe_pipeline_call(pipeline_func, request_dict: dict, catalog: list[dict]) -> dict:
+    """Defensive wrapper preventing any UI crashes from pipeline or backend failures."""
+    if helpers_safe_pipeline_call is not None:
+        try:
+            return helpers_safe_pipeline_call(pipeline_func, request_dict, catalog)
+        except Exception as exc:
+            pass
+
+    if pipeline_func is None:
+        return load_mock_data(request_dict)
+
+    try:
+        return pipeline_func(request_dict, catalog)
+    except Exception as exc:
+        fallback_res = load_mock_data(request_dict)
+        fallback_res["fallback"] = True
+        fallback_res.setdefault("meta", {})["error"] = str(exc)
+        return fallback_res
+
+
+# -----------------------------------------------------------------------------
+# Formatting Helpers
+# -----------------------------------------------------------------------------
+def format_kzt(amount: int) -> str:
+    """Format integer into readable Kazakhstani Tenge string."""
+    try:
+        return f"{amount:,}".replace(",", " ") + " ₸"
+    except Exception:
+        return f"{amount} ₸"
+
+
+def format_plural_results(count: int) -> str:
+    """Russian pluralization for matched results."""
+    if count == 1:
+        return f"Найден **1** подходящий вариант"
+    elif count in (2, 3, 4):
+        return f"Найдено **{count}** подходящих варианта"
+    else:
+        return f"Найдено **{count}** подходящих вариантов"
+
+
+# -----------------------------------------------------------------------------
+# UI CSS Styling
+# -----------------------------------------------------------------------------
+def inject_custom_styles():
+    st.markdown(
+        """
+        <style>
+        /* Modern Clean Styling */
+        .main-header {
+            margin-bottom: 1.5rem;
+        }
+        .main-header h1 {
+            font-size: 2.2rem;
+            font-weight: 700;
+            color: #1e293b;
+            margin-bottom: 0.25rem;
+        }
+        .main-header p {
+            font-size: 1.05rem;
+            color: #64748b;
+            margin-top: 0;
+        }
+
+        /* Card Container */
+        .contractor-card {
+            border: 1px solid #e2e8f0;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 20px;
+            background-color: #ffffff;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04);
+            transition: all 0.2s ease;
+        }
+        .contractor-card:hover {
+            box-shadow: 0 6px 14px rgba(0, 0, 0, 0.08);
+            border-color: #cbd5e1;
+        }
+
+        /* Card Header */
+        .card-header-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 8px;
+        }
+        .contractor-name {
+            font-size: 1.35rem;
+            font-weight: 700;
+            color: #0f172a;
+            margin: 0;
+        }
+        .contractor-sub {
+            font-size: 0.95rem;
+            color: #64748b;
+            margin-bottom: 12px;
+        }
+
+        /* Badges */
+        .badge-synthetic {
+            display: inline-block;
+            background: #ede9fe;
+            color: #6d28d9;
+            font-size: 0.75rem;
+            font-weight: 600;
+            padding: 3px 8px;
+            border-radius: 6px;
+            letter-spacing: 0.02em;
+            border: 1px solid #ddd6fe;
+        }
+        .badge-tag {
+            display: inline-block;
+            background: #f1f5f9;
+            color: #475569;
+            font-size: 0.85rem;
+            padding: 3px 10px;
+            border-radius: 6px;
+            margin-right: 6px;
+            margin-bottom: 6px;
+        }
+        .badge-price {
+            display: inline-block;
+            background: #ecfdf5;
+            color: #047857;
+            font-weight: 700;
+            font-size: 1rem;
+            padding: 4px 10px;
+            border-radius: 6px;
+            border: 1px solid #a7f3d0;
+            margin-bottom: 12px;
+        }
+
+        /* Primary Explanation Block (The Hero of the Card) */
+        .explanation-box {
+            background-color: #f8fafc;
+            border-left: 4px solid #3b82f6;
+            border-radius: 0 8px 8px 0;
+            padding: 14px 16px;
+            margin-top: 14px;
+            margin-bottom: 10px;
+        }
+        .explanation-label {
+            font-size: 0.8rem;
+            font-weight: 800;
+            color: #1d4ed8;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+            margin-bottom: 6px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .explanation-text {
+            font-size: 0.95rem;
+            line-height: 1.5;
+            color: #1e293b;
+        }
+
+        /* Diagnostics List */
+        .diagnostics-box {
+            background-color: #fffbeb;
+            border: 1px solid #fef3c7;
+            border-radius: 10px;
+            padding: 16px 20px;
+            margin-top: 16px;
+        }
+        .diagnostics-title {
+            font-weight: 700;
+            color: #92400e;
+            font-size: 1.05rem;
+            margin-bottom: 8px;
+        }
+        .diagnostics-list {
+            margin: 0;
+            padding-left: 20px;
+            color: #78350f;
+            font-size: 0.95rem;
+            line-height: 1.6;
+        }
+
+        /* Fallback demo mode badge */
+        .fallback-indicator {
+            display: inline-block;
+            background: #fef3c7;
+            color: #b45309;
+            font-size: 0.75rem;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-weight: 600;
+            margin-left: 8px;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+# -----------------------------------------------------------------------------
+# Result Rendering Functions
+# -----------------------------------------------------------------------------
+def render_card(contractor: dict) -> None:
+    """Render single contractor card focusing prominently on the explanation."""
+    name = contractor.get("name") or contractor.get("anon_name") or "Подрядчик"
+    category = contractor.get("category", "")
+    city = contractor.get("city", "")
+    price_from = contractor.get("price_from_kzt", 0)
+    languages = contractor.get("languages", [])
+    max_hours = contractor.get("max_hours")
+    explanation = contractor.get("explanation", "")
+    synthetic = contractor.get("synthetic", False)
+    city_imputed = contractor.get("city_imputed", False)
+    price_imputed = contractor.get("price_imputed", False)
+
+    # Format tags
+    lang_str = ", ".join(languages) if languages else "любой"
+    hours_str = f"до {max_hours:g} часов" if max_hours else "без лимита по часам"
+
+    synthetic_badge_html = (
+        '<span class="badge-synthetic">🤖 Синтетический профиль</span>'
+        if synthetic
+        else ""
+    )
+
+    card_html = f"""
+    <div class="contractor-card">
+        <div class="card-header-row">
+            <div>
+                <h3 class="contractor-name">{name}</h3>
+                <div class="contractor-sub">{category} · {city}</div>
+            </div>
+            <div>
+                {synthetic_badge_html}
+            </div>
+        </div>
+        <div>
+            <span class="badge-price">от {format_kzt(price_from)}</span>
+        </div>
+        <div>
+            <span class="badge-tag">🗣️ {lang_str}</span>
+            <span class="badge-tag">⏱️ {hours_str}</span>
+        </div>
+        <div class="explanation-box">
+            <div class="explanation-label">ПОЧЕМУ ЭТОТ ПОДРЯДЧИК ПОДХОДИТ</div>
+            <div class="explanation-text">{explanation}</div>
+        </div>
+    </div>
+    """
+    st.markdown(card_html, unsafe_allow_html=True)
+
+    # Secondary metadata in collapsed expander
+    if city_imputed or price_imputed:
+        with st.expander("Подробнее о данных профиля", expanded=False):
+            if city_imputed:
+                st.caption("ℹ️ Город подрядчика был восстановлен или уточнен.")
+            if price_imputed:
+                st.caption("ℹ️ Базовая стоимость была рассчитана на основе медианы категории.")
+
+
+def render_diagnostics(meta: dict, req: dict) -> None:
+    """Render failure state diagnostics without showing 0-count items."""
+    diagnostics = meta.get("diagnostics", {})
+    date_str = req.get("date", "выбранную дату")
+    budget_str = format_kzt(req.get("budget_kzt", 0))
+    format_str = req.get("event_format", "")
+    language_str = req.get("language")
+    duration = req.get("duration_hours")
+
+    bullet_points = []
+
+    busy = diagnostics.get("busy_on_date", 0)
+    if busy > 0:
+        bullet_points.append(f"**{busy}** заняты на дату {date_str}")
+
+    over = diagnostics.get("over_budget", 0)
+    if over > 0:
+        bullet_points.append(f"**{over}** начинаются выше вашего бюджета ({budget_str})")
+
+    unsupported_fmt = diagnostics.get("unsupported_format", 0)
+    if unsupported_fmt > 0:
+        bullet_points.append(f"**{unsupported_fmt}** не работают с форматом «{format_str}»")
+
+    unsupported_lang = diagnostics.get("unsupported_language", 0)
+    if unsupported_lang > 0 and language_str:
+        bullet_points.append(f"**{unsupported_lang}** не поддерживают язык «{language_str}»")
+
+    duration_long = diagnostics.get("duration_too_long", 0)
+    if duration_long > 0 and duration:
+        bullet_points.append(
+            f"**{duration_long}** имеют лимит длительности меньше запрошенных {duration:g} ч"
+        )
+
+    # Render diagnostics box
+    st.markdown(
+        f"""
+        <div class="diagnostics-box">
+            <div class="diagnostics-title">Почему никто не подошел:</div>
+            <ul class="diagnostics-list">
+                {"".join(f"<li>{pt}</li>" for pt in bullet_points)}
+            </ul>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_result(result: dict, original_req: dict) -> None:
+    """Visually differentiate all three contract statuses and render recommendations."""
+    status = result.get("status")
+
+    # Matched State
+    if status == "matched":
+        candidates = result.get("results", [])
+        total_returned = len(candidates)
+
+        col_title, col_info = st.columns([3, 1])
+        with col_title:
+            st.markdown(f"### {format_plural_results(total_returned)}")
+        with col_info:
+            if result.get("fallback"):
+                st.markdown(
+                    '<div style="text-align:right;"><span class="fallback-indicator">Демо-режим</span></div>',
+                    unsafe_allow_html=True,
+                )
+
+        if not candidates:
+            st.info("Нет подходящих кандидатов для отображения.")
+            return
+
+        # Render up to 3 cards
+        for contractor in candidates[:3]:
+            render_card(contractor)
+
+    # No Category in City State
+    elif status == "no_category_in_city":
+        city = original_req.get("city", "")
+        category = original_req.get("category", "")
+        st.warning(f"В городе **{city}** нет подрядчиков категории **«{category}»**.")
+        st.info("💡 Рекомендация: выберите другой город или смените категорию.")
+
+    # No Eligible Candidates State
+    elif status == "no_eligible_candidates":
+        city = original_req.get("city", "")
+        category = original_req.get("category", "")
+        st.warning(
+            f"В городе **{city}** есть подрядчики категории **«{category}»**, "
+            "но под условия заказа сейчас никто не подходит."
+        )
+        meta = result.get("meta", {})
+        render_diagnostics(meta, original_req)
+        st.info("💡 Рекомендация: попробуйте увеличить бюджет или выбрать другую дату.")
+
+    # Fallback or Unexpected Error
+    else:
+        st.error(
+            "Не удалось получить рекомендации. Попробуйте изменить параметры поиска."
+        )
+
+
+# -----------------------------------------------------------------------------
+# Form Builder
+# -----------------------------------------------------------------------------
+def build_request_form(contractors: list[dict]) -> tuple[dict, bool]:
+    """Render search form with 3-column primary grid and collapsed advanced options."""
+    # Determine unique categories
+    existing_categories = set()
+    for c in contractors:
+        existing_categories.update(c.get("categories", []))
+    available_categories = (
+        sorted(list(existing_categories)) if existing_categories else CATEGORIES
+    )
+
+    # Determine default category index
+    default_cat_idx = (
+        available_categories.index("Фотограф")
+        if "Фотограф" in available_categories
+        else 0
+    )
+
+    with st.container():
+        # Row 1: City, Date, Event Format
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            city = st.selectbox("Город", options=CITIES, index=0)
+        with col2:
+            event_date = st.date_input(
+                "Дата мероприятия",
+                value=DEFAULT_DATE,
+                min_value=MIN_DATE,
+                max_value=MAX_DATE,
+                help="Календарь датасета ограничен диапазоном с 23.09.2026 по 31.12.2026",
+            )
+        with col3:
+            event_format = st.selectbox(
+                "Тип мероприятия",
+                options=EVENT_FORMATS,
+                index=0,
+            )
+
+        # Row 2: Category, Budget
+        col4, col5 = st.columns([1, 1])
+        with col4:
+            category = st.selectbox(
+                "Категория подрядчика",
+                options=available_categories,
+                index=default_cat_idx,
+            )
+        with col5:
+            budget_kzt = st.number_input(
+                "Бюджет (₸)",
+                min_value=10000,
+                max_value=20000000,
+                value=400000,
+                step=50000,
+                format="%d",
+                help="Укажите максимальный бюджет в тенге",
+            )
+            st.caption(f"Выбранный бюджет: **{format_kzt(budget_kzt)}**")
+
+        # Row 3: Optional Parameters (Collapsed)
+        duration_val = None
+        language_val = None
+        with st.expander("Дополнительные параметры", expanded=False):
+            exp_col1, exp_col2 = st.columns(2)
+            with exp_col1:
+                use_duration = st.checkbox("Указать длительность (часов)", value=True)
+                if use_duration:
+                    duration_val = st.slider(
+                        "Длительность",
+                        min_value=1,
+                        max_value=16,
+                        value=8,
+                        step=1,
+                    )
+                else:
+                    duration_val = None
+
+            with exp_col2:
+                selected_lang = st.selectbox(
+                    "Язык ведения / общения",
+                    options=["Любой", "русский", "казахский", "английский"],
+                    index=1,  # Default: русский
+                )
+                language_val = None if selected_lang == "Любой" else selected_lang
+
+        st.markdown("<div style='height: 8px;'></div>", unsafe_allow_html=True)
+        submitted = st.button(
+            "Подобрать подрядчиков",
+            type="primary",
+            use_container_width=True,
+        )
+
+    # Format Date as ISO String YYYY-MM-DD
+    date_iso = (
+        event_date.strftime("%Y-%m-%d")
+        if isinstance(event_date, (date, datetime))
+        else str(event_date)
+    )
+
+    request_payload = {
+        "city": city,
+        "date": date_iso,
+        "event_format": event_format,
+        "category": category,
+        "budget_kzt": int(budget_kzt),
+        "duration_hours": duration_val,
+        "language": language_val,
+    }
+
+    return request_payload, submitted
+
+
+# -----------------------------------------------------------------------------
+# Main Application Entrypoint
+# -----------------------------------------------------------------------------
+def main():
+    inject_custom_styles()
+
+    # Session State Initialization
+    if "result" not in st.session_state:
+        st.session_state.result = None
+    if "last_request" not in st.session_state:
+        st.session_state.last_request = None
+
+    # Load Contractors
+    contractors = load_contractors()
+
+    # Header
+    st.markdown(
+        """
+        <div class="main-header">
+            <h1>Умный подбор event-подрядчиков</h1>
+            <p>Найдём до 3 лучших вариантов и объясним решение по каждому кандидату</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    # Sidebar: Demo scenarios guide & debug info
+    with st.sidebar:
+        st.markdown("### 🎯 Сценарии для жюри")
+        st.markdown(
+            """
+            **1. Happy Path (3 клика):**
+            - Алматы, 14 ноября, Свадьба, Фотограф, 400 000 ₸.
+            - Нажмите «Подобрать».
+            - Результат: 3 карточки с обоснованиями.
+
+            **2. WOW-эффект (проверка занятости):**
+            - Измените только дату на **15 ноября** или **18 ноября**.
+            - Нажмите «Подобрать».
+            - Выдача меняется из-за занятости конкретных мастеров!
+
+            **3. Диагностика отказа:**
+            - Установите бюджет **50 000 ₸**.
+            - Система покажет точные причины, почему никто не подошел.
+
+            **4. Отсутствие категории:**
+            - Выберите город **Зарубежье** или редкую категорию.
+            """
+        )
+        st.markdown("---")
+        st.markdown("### ⚙️ Статус системы")
+        core_ready = run_pipeline is not None
+        st.write(
+            f"**Core Engine:** {'🟢 Подключен' if core_ready else '🟡 Режим Mock'}"
+        )
+        st.write(f"**Загружено подрядчиков:** {len(contractors)}")
+
+        debug_mode = st.toggle("Режим отладки (Debug)", value=False)
+        if debug_mode and st.session_state.result is not None:
+            st.markdown("#### Сырой ответ (JSON):")
+            st.json(st.session_state.result)
+
+    # Form
+    request_data, submitted = build_request_form(contractors)
+
+    # Submission Handler
+    if submitted:
+        with st.spinner("Проверяем доступность и подбираем варианты..."):
+            result = safe_pipeline_call(run_pipeline, request_data, contractors)
+            st.session_state.result = result
+            st.session_state.last_request = request_data
+
+    # Render Results
+    if st.session_state.result is not None:
+        st.markdown("<hr style='margin: 24px 0 16px 0;'>", unsafe_allow_html=True)
+        render_result(st.session_state.result, st.session_state.last_request)
+
+
+if __name__ == "__main__":
+    main()
