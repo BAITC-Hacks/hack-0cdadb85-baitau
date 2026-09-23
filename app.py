@@ -81,6 +81,8 @@ CATEGORIES = [
     "Шоу-программа",
 ]
 
+# Stable demo scenario used for final presentation:
+# Алматы / 2026-11-14 / свадьба / Фотограф / 400000 / 8 ч / русский
 DEFAULT_DATE = date(2026, 11, 14)
 MIN_DATE = date(2026, 9, 23)
 MAX_DATE = date(2026, 12, 31)
