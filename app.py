@@ -289,10 +289,7 @@ def generate_feature_id() -> str:
 def save_feature_contractor(contractor: dict) -> dict:
     """Save contractor via helpers API if present, otherwise into session_state."""
     if helpers_save_feature_contractor is not None:
-        try:
-            return helpers_save_feature_contractor(contractor)
-        except Exception:
-            pass
+        return helpers_save_feature_contractor(contractor)
 
     if "feature_contractors" not in st.session_state:
         st.session_state.feature_contractors = []
@@ -899,11 +896,27 @@ def render_role_selector() -> str:
     with col_role:
         st.write("**Выберите вашу роль на платформе:**")
         role_options = ["Заказчик (подбор специалистов)", "Подрядчик (регистрация профиля)"]
-        curr_idx = 0 if "Заказчик" in st.session_state.current_role else 1
+        default_label = (
+            role_options[0]
+            if st.session_state.current_role == "Заказчик"
+            else role_options[1]
+        )
+        if "role_radio_select" not in st.session_state:
+            st.session_state.role_radio_select = default_label
+        elif (
+            st.session_state.current_role == "Заказчик"
+            and "Заказчик" not in st.session_state.role_radio_select
+        ):
+            st.session_state.role_radio_select = role_options[0]
+        elif (
+            st.session_state.current_role == "Подрядчик"
+            and "Подрядчик" not in st.session_state.role_radio_select
+        ):
+            st.session_state.role_radio_select = role_options[1]
+
         selected = st.radio(
             "Роль пользователя",
             options=role_options,
-            index=curr_idx,
             horizontal=True,
             label_visibility="collapsed",
             key="role_radio_select",
@@ -954,6 +967,7 @@ def render_contractor_form(available_categories: list[str]) -> None:
         with col_b1:
             if st.button("🔍 Перейти к подбору как заказчик", type="primary", use_container_width=True):
                 st.session_state.current_role = "Заказчик"
+                st.session_state.role_radio_select = "Заказчик (подбор специалистов)"
                 st.session_state.contractor_registered = False
                 st.rerun()
         with col_b2:
@@ -966,7 +980,11 @@ def render_contractor_form(available_categories: list[str]) -> None:
     st.caption("Укажите данные о ваших услугах, чтобы участвовать в AI-подборе для заказчиков")
 
     with st.form("contractor_registration_form"):
-        name = st.text_input("Название компании / Имя мастера*", placeholder="Например: Nova Photo")
+        name = st.text_input(
+            "Название компании / Имя мастера*",
+            value="Nova Photo",
+            placeholder="Например: Nova Photo",
+        )
 
         col1, col2 = st.columns(2)
         with col1:
@@ -1066,10 +1084,14 @@ def render_contractor_form(available_categories: list[str]) -> None:
             "price_imputed": False,
         }
 
-        save_feature_contractor(new_contractor)
-        st.session_state.contractor_registered = True
-        st.session_state.last_contractor = new_contractor
-        st.rerun()
+        try:
+            saved_profile = save_feature_contractor(new_contractor)
+            st.session_state.contractor_registered = True
+            st.session_state.last_contractor = saved_profile
+            st.rerun()
+        except Exception as exc:
+            st.error(f"⚠️ Ошибка при сохранении профиля: {exc}")
+            return
 
 
 def render_contractor_flow(available_categories: list[str]) -> None:
