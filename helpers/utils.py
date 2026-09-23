@@ -5,7 +5,9 @@ import copy
 import json
 import logging
 import math
+import os
 import re
+import tempfile
 import threading
 from datetime import date, datetime
 from pathlib import Path
@@ -18,6 +20,8 @@ _LOGGER = logging.getLogger(__name__)
 _CORE_SLOTS = threading.BoundedSemaphore(4)
 _FLAGS = ("synthetic", "city_imputed", "price_imputed")
 _LISTS = ("categories", "event_formats", "languages", "busy_dates")
+_FEATURE_PATH = _DIRECTORY / "contractors_feature.json"
+_FEATURE_LOCK = threading.RLock()
 
 
 def _missing(value):
@@ -229,6 +233,106 @@ def load_contractors() -> list[dict[str, Any]]:
     if len({c["id"] for c in contractors}) != len(contractors):
         raise ValueError("CONTRACT ISSUE: duplicate contractor IDs")
     return contractors
+
+
+def _validate_feature_contractor(contractor: dict) -> None:
+    """Apply the existing contract and stricter user-submission requirements."""
+    if not validate_contractor(contractor):
+        raise ValueError("Invalid feature contractor contract")
+    identifier = contractor["id"]
+    if not re.fullmatch(r"USR-[0-9]{5,}", identifier):
+        raise ValueError("Feature ID must use USR-00001 format")
+    number = int(identifier[4:])
+    if number < 1 or identifier != f"USR-{number:05d}":
+        raise ValueError("Invalid feature ID number")
+    if contractor["price_from_kzt"] <= 0:
+        raise ValueError("price_from_kzt must be positive")
+    if not contractor["event_formats"] or not contractor["languages"]:
+        raise ValueError("event_formats and languages must not be empty")
+    if not contractor["description"].strip():
+        raise ValueError("description must not be empty")
+    if contractor["max_hours"] is not None and contractor["max_hours"] <= 0:
+        raise ValueError("max_hours must be positive or None")
+
+
+def load_feature_contractors() -> list[dict]:
+    """Read user profiles; missing/blank storage is empty, corruption raises ValueError.
+
+    Errors never reset or overwrite the file. UI should display the error message.
+    """
+    with _FEATURE_LOCK:
+        try:
+            content = _FEATURE_PATH.read_text(encoding="utf-8")
+        except FileNotFoundError:
+            return []
+        except (OSError, UnicodeError):
+            raise ValueError("Cannot read feature contractor storage") from None
+        if not content.strip():
+            return []
+        try:
+            rows = json.loads(content)
+            if not isinstance(rows, list):
+                raise ValueError("Expected list")
+            ids = set()
+            for row in rows:
+                _validate_feature_contractor(row)
+                if row["id"] in ids:
+                    raise ValueError("Duplicate ID")
+                ids.add(row["id"])
+                if (row["synthetic"], row["city_imputed"], row["price_imputed"]) != (True, False, False):
+                    raise ValueError("Invalid user profile flags")
+        except (ValueError, TypeError, RecursionError):
+            raise ValueError("Feature contractor storage is invalid; file was not changed") from None
+        return rows
+
+
+def generate_feature_id() -> str:
+    """Return max persisted USR number + 1; this does not reserve the ID.
+
+    Concurrent forms can receive the same suggestion; save rejects duplicates.
+    """
+    rows = load_feature_contractors()
+    number = max((int(row["id"][4:]) for row in rows), default=0) + 1
+    return f"USR-{number:05d}"
+
+
+def save_feature_contractor(contractor: dict) -> dict:
+    """Validate and append a user profile, atomically replacing feature storage.
+
+    A lock serializes writes within one application process. Original catalog
+    and caller inputs are never modified; multiple writer processes are unsupported.
+    """
+    _validate_feature_contractor(contractor)
+    saved = copy.deepcopy(contractor)
+    saved.update(synthetic=True, city_imputed=False, price_imputed=False)
+    with _FEATURE_LOCK:
+        rows = load_feature_contractors()
+        if any(row["id"] == saved["id"] for row in rows):
+            raise ValueError(f"Duplicate feature contractor ID: {saved['id']}")
+        rows.append(saved)
+        content = json.dumps(rows, ensure_ascii=False, indent=2, allow_nan=False) + "\n"
+        temporary = None
+        try:
+            with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=_FEATURE_PATH.parent,
+                                             prefix=".contractors_feature-", suffix=".tmp", delete=False) as target:
+                temporary = Path(target.name)
+                target.write(content)
+                target.flush()
+                os.fsync(target.fileno())
+            os.replace(temporary, _FEATURE_PATH)
+        except OSError:
+            raise ValueError("Cannot save feature contractor; storage was not replaced") from None
+        finally:
+            if temporary is not None:
+                temporary.unlink(missing_ok=True)
+    return saved
+
+
+def load_all_contractors() -> list[dict]:
+    """Return the original 66 profiles followed by persisted feature profiles."""
+    base = load_contractors()
+    feature = load_feature_contractors()
+    return base + feature
 
 
 def load_mock_data() -> dict[str, Any]:

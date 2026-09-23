@@ -63,3 +63,31 @@ PYTHONDONTWRITEBYTECODE=1 python -m unittest helpers.test_utils helpers.test_cor
   `from helpers.utils import load_contractors`.
 - UI: `helpers/mock_data.json`; `from helpers.utils import load_mock_data, safe_pipeline_call`.
   При `fallback` показывать пометку демо и значения `result["query"]`.
+
+## Phase 2: новые подрядчики
+
+`load_contractors()` по-прежнему загружает только исходные 66 профилей.
+`load_feature_contractors()` читает отдельный `helpers/contractors_feature.json`,
+изначально `[]`. `load_all_contractors()` возвращает base + feature.
+
+UI передаёт полный contractor contract в `save_feature_contractor(contractor)`;
+поле `id` предварительно получает через `generate_feature_id()`.
+Номер вычисляется по максимальному сохранённому `USR-*`, начиная с `USR-00001`.
+Генерация не резервирует ID: при одновременном заполнении форм сохранение
+повторного ID отклоняется с `ValueError`; UI может получить новый ID и повторить.
+
+Сохранение проверяет существующий контракт и дополнительные ограничения:
+положительная цена, непустые название, категории, город, форматы, языки и описание;
+`max_hours` — положительное целое или `None`; `busy_dates` — список ISO-дат.
+Флаги сохраняются как `synthetic=True`, `city_imputed=False`, `price_imputed=False`.
+Входной dict не изменяется; функция возвращает сохранённый dict.
+
+Отсутствующий, пустой или содержащий `[]` файл читается как пустой список.
+Повреждённый JSON, неверные записи или дубликаты вызывают `ValueError` с безопасным
+сообщением; UI должен показать ошибку. Файл автоматически не очищается.
+Запись UTF-8 с `ensure_ascii=False` и `indent=2` использует временный файл
+и атомарную замену. Потоки одного процесса защищены блокировкой;
+одновременная запись несколькими процессами не поддерживается.
+
+`helpers/test_feature_storage.py` проверяет сохранение на временном пути,
+не загрязняя реальное feature-хранилище.
