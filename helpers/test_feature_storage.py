@@ -117,6 +117,21 @@ class FeatureStorageTests(unittest.TestCase):
                     operation()
                 self.assertEqual(self.path.read_text(encoding="utf-8"), content)
 
+    def test_malformed_feature_storage_does_not_affect_base_catalog(self):
+        base_path = utils._DIRECTORY / "contractors.json"
+        original_bytes = base_path.read_bytes()
+        original_catalog = utils.load_contractors()
+        self.path.write_text("{broken", encoding="utf-8")
+
+        with self.assertRaisesRegex(ValueError, "storage is invalid"):
+            utils.load_all_contractors()
+
+        base = utils.load_contractors()
+        self.assertEqual(len(base), 66)
+        self.assertEqual(base, original_catalog)
+        self.assertEqual(base_path.read_bytes(), original_bytes)
+        self.assertEqual(self.path.read_text(encoding="utf-8"), "{broken")
+
     def test_failed_write_preserves_storage(self):
         original = self.path.read_bytes()
         with patch.object(utils.os, "replace", side_effect=OSError("disk error")):
