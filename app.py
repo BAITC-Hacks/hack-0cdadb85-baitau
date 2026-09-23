@@ -9,6 +9,7 @@ from datetime import date, datetime
 import json
 import os
 import sys
+from textwrap import dedent
 from typing import Any, Optional
 
 import streamlit as st
@@ -414,160 +415,153 @@ def format_plural_results(count: int) -> str:
         return f"Найдено **{count}** подходящих вариантов"
 
 
+def render_html(html_str: str) -> None:
+    """Render HTML safely without triggering Markdown indentation code-blocks."""
+    clean_html = dedent(html_str).strip()
+    if hasattr(st, "html"):
+        st.html(clean_html)
+    else:
+        st.markdown(clean_html, unsafe_allow_html=True)
+
+
 # -----------------------------------------------------------------------------
 # UI CSS Styling
 # -----------------------------------------------------------------------------
 def inject_custom_styles():
-    st.markdown(
-        """
-        <style>
-        /* Modern Clean Styling */
-        .main-header {
-            margin-bottom: 1.5rem;
-        }
-        .main-header h1 {
-            font-size: 2.2rem;
-            font-weight: 700;
-            color: #1e293b;
-            margin-bottom: 0.25rem;
-        }
-        .main-header p {
-            font-size: 1.05rem;
-            color: #64748b;
-            margin-top: 0;
-        }
+    styles = """
+    <style>
+    /* Card Container - Adaptive for Light and Dark themes */
+    .contractor-card {
+        border: 1px solid rgba(148, 163, 184, 0.25);
+        border-radius: 12px;
+        padding: 20px;
+        margin-bottom: 20px;
+        background-color: var(--secondary-background-color, #ffffff);
+        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04);
+        transition: all 0.2s ease;
+    }
+    .contractor-card:hover {
+        box-shadow: 0 6px 14px rgba(0, 0, 0, 0.08);
+        border-color: rgba(59, 130, 246, 0.4);
+    }
 
-        /* Card Container */
-        .contractor-card {
-            border: 1px solid #e2e8f0;
-            border-radius: 12px;
-            padding: 20px;
-            margin-bottom: 20px;
-            background-color: #ffffff;
-            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04);
-            transition: all 0.2s ease;
-        }
-        .contractor-card:hover {
-            box-shadow: 0 6px 14px rgba(0, 0, 0, 0.08);
-            border-color: #cbd5e1;
-        }
+    /* Card Header */
+    .card-header-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        margin-bottom: 8px;
+    }
+    .contractor-name {
+        font-size: 1.35rem;
+        font-weight: 700;
+        color: var(--text-color, #0f172a);
+        margin: 0;
+    }
+    .contractor-sub {
+        font-size: 0.95rem;
+        color: var(--text-color, #64748b);
+        opacity: 0.8;
+        margin-bottom: 12px;
+    }
 
-        /* Card Header */
-        .card-header-row {
-            display: flex;
-            justify-content: space-between;
-            align-items: flex-start;
-            margin-bottom: 8px;
-        }
-        .contractor-name {
-            font-size: 1.35rem;
-            font-weight: 700;
-            color: #0f172a;
-            margin: 0;
-        }
-        .contractor-sub {
-            font-size: 0.95rem;
-            color: #64748b;
-            margin-bottom: 12px;
-        }
+    /* Badges */
+    .badge-synthetic {
+        display: inline-block;
+        background: rgba(139, 92, 246, 0.15);
+        color: #8b5cf6;
+        font-size: 0.75rem;
+        font-weight: 600;
+        padding: 3px 8px;
+        border-radius: 6px;
+        letter-spacing: 0.02em;
+        border: 1px solid rgba(139, 92, 246, 0.3);
+    }
+    .badge-tag {
+        display: inline-block;
+        background: rgba(148, 163, 184, 0.18);
+        color: var(--text-color, #475569);
+        font-size: 0.85rem;
+        padding: 3px 10px;
+        border-radius: 6px;
+        margin-right: 6px;
+        margin-bottom: 6px;
+    }
+    .badge-price {
+        display: inline-block;
+        background: rgba(16, 185, 129, 0.15);
+        color: #10b981;
+        font-weight: 700;
+        font-size: 1rem;
+        padding: 4px 10px;
+        border-radius: 6px;
+        border: 1px solid rgba(16, 185, 129, 0.3);
+        margin-bottom: 12px;
+    }
 
-        /* Badges */
-        .badge-synthetic {
-            display: inline-block;
-            background: #ede9fe;
-            color: #6d28d9;
-            font-size: 0.75rem;
-            font-weight: 600;
-            padding: 3px 8px;
-            border-radius: 6px;
-            letter-spacing: 0.02em;
-            border: 1px solid #ddd6fe;
-        }
-        .badge-tag {
-            display: inline-block;
-            background: #f1f5f9;
-            color: #475569;
-            font-size: 0.85rem;
-            padding: 3px 10px;
-            border-radius: 6px;
-            margin-right: 6px;
-            margin-bottom: 6px;
-        }
-        .badge-price {
-            display: inline-block;
-            background: #ecfdf5;
-            color: #047857;
-            font-weight: 700;
-            font-size: 1rem;
-            padding: 4px 10px;
-            border-radius: 6px;
-            border: 1px solid #a7f3d0;
-            margin-bottom: 12px;
-        }
+    /* Primary Explanation Block (The Hero of the Card) */
+    .explanation-box {
+        background-color: rgba(59, 130, 246, 0.08);
+        border-left: 4px solid #3b82f6;
+        border-radius: 0 8px 8px 0;
+        padding: 14px 16px;
+        margin-top: 14px;
+        margin-bottom: 10px;
+    }
+    .explanation-label {
+        font-size: 0.8rem;
+        font-weight: 800;
+        color: #3b82f6;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        margin-bottom: 6px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+    .explanation-text {
+        font-size: 0.95rem;
+        line-height: 1.5;
+        color: var(--text-color, #1e293b);
+    }
 
-        /* Primary Explanation Block (The Hero of the Card) */
-        .explanation-box {
-            background-color: #f8fafc;
-            border-left: 4px solid #3b82f6;
-            border-radius: 0 8px 8px 0;
-            padding: 14px 16px;
-            margin-top: 14px;
-            margin-bottom: 10px;
-        }
-        .explanation-label {
-            font-size: 0.8rem;
-            font-weight: 800;
-            color: #1d4ed8;
-            letter-spacing: 0.05em;
-            text-transform: uppercase;
-            margin-bottom: 6px;
-            display: flex;
-            align-items: center;
-            gap: 6px;
-        }
-        .explanation-text {
-            font-size: 0.95rem;
-            line-height: 1.5;
-            color: #1e293b;
-        }
+    /* Diagnostics List */
+    .diagnostics-box {
+        background-color: rgba(245, 158, 11, 0.1);
+        border: 1px solid rgba(245, 158, 11, 0.3);
+        border-radius: 10px;
+        padding: 16px 20px;
+        margin-top: 16px;
+    }
+    .diagnostics-title {
+        font-weight: 700;
+        color: #d97706;
+        font-size: 1.05rem;
+        margin-bottom: 8px;
+    }
+    .diagnostics-list {
+        margin: 0;
+        padding-left: 20px;
+        color: var(--text-color, #78350f);
+        font-size: 0.95rem;
+        line-height: 1.6;
+    }
 
-        /* Diagnostics List */
-        .diagnostics-box {
-            background-color: #fffbeb;
-            border: 1px solid #fef3c7;
-            border-radius: 10px;
-            padding: 16px 20px;
-            margin-top: 16px;
-        }
-        .diagnostics-title {
-            font-weight: 700;
-            color: #92400e;
-            font-size: 1.05rem;
-            margin-bottom: 8px;
-        }
-        .diagnostics-list {
-            margin: 0;
-            padding-left: 20px;
-            color: #78350f;
-            font-size: 0.95rem;
-            line-height: 1.6;
-        }
-
-        /* Fallback demo mode badge */
-        .fallback-indicator {
-            display: inline-block;
-            background: #fef3c7;
-            color: #b45309;
-            font-size: 0.75rem;
-            padding: 2px 8px;
-            border-radius: 4px;
-            font-weight: 600;
-            margin-left: 8px;
-        }
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
+    /* Fallback demo mode badge */
+    .fallback-indicator {
+        display: inline-block;
+        background: rgba(245, 158, 11, 0.15);
+        color: #d97706;
+        font-size: 0.75rem;
+        padding: 2px 8px;
+        border-radius: 4px;
+        font-weight: 600;
+        margin-left: 8px;
+        border: 1px solid rgba(245, 158, 11, 0.3);
+    }
+    </style>
+    """
+    render_html(styles)
 
 
 # -----------------------------------------------------------------------------
@@ -596,7 +590,7 @@ def render_card(contractor: dict) -> None:
         else ""
     )
 
-    card_html = f"""
+    card_html = dedent(f"""
     <div class="contractor-card">
         <div class="card-header-row">
             <div>
@@ -619,8 +613,8 @@ def render_card(contractor: dict) -> None:
             <div class="explanation-text">{explanation}</div>
         </div>
     </div>
-    """
-    st.markdown(card_html, unsafe_allow_html=True)
+    """).strip()
+    render_html(card_html)
 
     # Secondary metadata in collapsed expander
     if city_imputed or price_imputed:
@@ -665,17 +659,16 @@ def render_diagnostics(meta: dict, req: dict) -> None:
         )
 
     # Render diagnostics box
-    st.markdown(
-        f"""
-        <div class="diagnostics-box">
-            <div class="diagnostics-title">Почему никто не подошел:</div>
-            <ul class="diagnostics-list">
-                {"".join(f"<li>{pt}</li>" for pt in bullet_points)}
-            </ul>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+    list_items = "".join(f"<li>{pt}</li>" for pt in bullet_points)
+    diag_html = dedent(f"""
+    <div class="diagnostics-box">
+        <div class="diagnostics-title">Почему никто не подошел:</div>
+        <ul class="diagnostics-list">
+            {list_items}
+        </ul>
+    </div>
+    """).strip()
+    render_html(diag_html)
 
 
 def render_result(result: dict, original_req: dict) -> None:
@@ -692,10 +685,7 @@ def render_result(result: dict, original_req: dict) -> None:
             st.markdown(f"### {format_plural_results(total_returned)}")
         with col_info:
             if result.get("fallback"):
-                st.markdown(
-                    '<div style="text-align:right;"><span class="fallback-indicator">Демо-режим</span></div>',
-                    unsafe_allow_html=True,
-                )
+                render_html('<div style="text-align:right;"><span class="fallback-indicator">Демо-режим</span></div>')
 
         if not candidates:
             st.info("Нет подходящих кандидатов для отображения.")
@@ -817,7 +807,6 @@ def build_request_form(contractors: list[dict]) -> tuple[dict, bool]:
                 )
                 language_val = None if selected_lang == "Любой" else selected_lang
 
-        st.markdown("<div style='height: 8px;'></div>", unsafe_allow_html=True)
         submitted = st.button(
             "Подобрать подрядчиков",
             type="primary",
@@ -860,15 +849,8 @@ def main():
     contractors = load_contractors()
 
     # Header
-    st.markdown(
-        """
-        <div class="main-header">
-            <h1>Умный подбор event-подрядчиков</h1>
-            <p>Найдём до 3 лучших вариантов и объясним решение по каждому кандидату</p>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+    st.title("Умный подбор event-подрядчиков")
+    st.caption("Найдём до 3 лучших вариантов и объясним решение по каждому кандидату")
 
     # Sidebar: Demo scenarios guide & debug info
     with st.sidebar:
@@ -918,7 +900,7 @@ def main():
 
     # Render Results
     if st.session_state.result is not None:
-        st.markdown("<hr style='margin: 24px 0 16px 0;'>", unsafe_allow_html=True)
+        st.divider()
         render_result(st.session_state.result, st.session_state.last_request)
 
 
