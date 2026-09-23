@@ -903,16 +903,6 @@ def render_role_selector() -> str:
         )
         if "role_radio_select" not in st.session_state:
             st.session_state.role_radio_select = default_label
-        elif (
-            st.session_state.current_role == "Заказчик"
-            and "Заказчик" not in st.session_state.role_radio_select
-        ):
-            st.session_state.role_radio_select = role_options[0]
-        elif (
-            st.session_state.current_role == "Подрядчик"
-            and "Подрядчик" not in st.session_state.role_radio_select
-        ):
-            st.session_state.role_radio_select = role_options[1]
 
         selected = st.radio(
             "Роль пользователя",
@@ -965,11 +955,13 @@ def render_contractor_form(available_categories: list[str]) -> None:
 
         col_b1, col_b2 = st.columns([1, 1])
         with col_b1:
-            if st.button("🔍 Перейти к подбору как заказчик", type="primary", use_container_width=True):
+            def switch_to_customer():
                 st.session_state.current_role = "Заказчик"
                 st.session_state.role_radio_select = "Заказчик (подбор специалистов)"
                 st.session_state.contractor_registered = False
-                st.rerun()
+
+            st.button("🔍 Перейти к подбору как заказчик", type="primary",
+                      use_container_width=True, on_click=switch_to_customer)
         with col_b2:
             if st.button("➕ Добавить ещё одного подрядчика", type="secondary", use_container_width=True):
                 st.session_state.contractor_registered = False
