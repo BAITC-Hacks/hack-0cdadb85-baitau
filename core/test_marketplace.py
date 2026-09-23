@@ -1,10 +1,14 @@
-"""User submissions use the existing contract; no marketplace storage is required."""
+"""Core integration for in-memory submissions and isolated feature storage."""
 
 from copy import deepcopy
+from pathlib import Path
+from tempfile import TemporaryDirectory
 import unittest
+from unittest.mock import patch
 
 from core import run_pipeline
 from core.test_generator import request
+from helpers import utils
 from helpers.utils import load_contractors, safe_pipeline_call, validate_output
 
 
@@ -104,6 +108,81 @@ class MarketplaceIntegrationTests(unittest.TestCase):
             if card["id"] == self.submitted["id"]:
                 card["id"] = renamed["id"]
         self.assertEqual(ordinary, expected)
+
+
+class PersistedMarketplaceIntegrationTests(unittest.TestCase):
+    def setUp(self):
+        directory = TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.storage = Path(directory.name) / "contractors_feature.json"
+        self.storage.write_text("[]\n", encoding="utf-8")
+        override = patch.object(utils, "_FEATURE_PATH", self.storage)
+        override.start()
+        self.addCleanup(override.stop)
+        self.base = utils.load_contractors()
+        self.query = request()
+        self.submitted = dict(
+            id=utils.generate_feature_id(), anon_name="Nova Photo",
+            categories=[self.query["category"]], city=self.query["city"],
+            price_from_kzt=100000, event_formats=[self.query["event_format"]],
+            languages=[self.query["language"]], max_hours=12, busy_dates=[],
+            description="Свадебная фотография", synthetic=True,
+            city_imputed=False, price_imputed=False,
+        )
+
+    def test_empty_feature_storage_preserves_base_recommendations(self):
+        self.assertEqual(len(self.base), 66)
+        self.assertEqual(utils.load_feature_contractors(), [])
+        combined = utils.load_all_contractors()
+        self.assertEqual(combined, self.base)
+        self.assertEqual(run_pipeline(self.query, combined), run_pipeline(self.query, self.base))
+
+    def test_saved_submission_reaches_top_three_after_reload(self):
+        saved = utils.save_feature_contractor(self.submitted)
+        self.assertEqual(utils.load_feature_contractors(), [saved])
+        combined = utils.load_all_contractors()
+        self.assertEqual(len(combined), 67)
+        self.assertEqual(combined[:66], self.base)
+        result = safe_pipeline_call(run_pipeline, self.query, combined)
+        self.assertIs(result["fallback"], False)
+        self.assertEqual(result["status"], "matched")
+        self.assertLessEqual(len(result["results"]), 3)
+        card = next(c for c in result["results"] if c["id"] == saved["id"])
+        self.assertIs(card["synthetic"], True)
+        self.assertEqual(card["price_from_kzt"], 100000)
+        self.assertIn("от 100 000 ₸", card["explanation"])
+        self.assertIn("12 ч", card["explanation"])
+        for _ in range(5):
+            reloaded = utils.load_all_contractors()
+            self.assertEqual(dict(run_pipeline(self.query, reloaded), fallback=False), result)
+        self.assertEqual(dict(run_pipeline(self.query, combined[::-1]), fallback=False), result)
+        self.assertEqual(utils.load_contractors(), self.base)
+
+    def test_saved_busy_date_excludes_submission_after_reload(self):
+        saved = utils.save_feature_contractor(dict(self.submitted, busy_dates=[self.query["date"]]))
+        combined = utils.load_all_contractors()
+        self.assertEqual(len(combined), 67)
+        self.assertEqual(combined[-1]["busy_dates"], [self.query["date"]])
+        busy = run_pipeline(self.query, combined)
+        self.assertNotIn(saved["id"], [c["id"] for c in busy["results"]])
+        self.assertEqual(busy["results"], run_pipeline(self.query, self.base)["results"])
+        free = run_pipeline(request(date="2026-11-15"), utils.load_all_contractors())
+        self.assertIn(saved["id"], [c["id"] for c in free["results"]])
+
+    def test_saved_submission_preserves_empty_statuses_and_diagnostics(self):
+        utils.save_feature_contractor(self.submitted)
+        combined = utils.load_all_contractors()
+        absent = request(city="Зарубежье", category="Шоу-программа")
+        no_category = safe_pipeline_call(run_pipeline, absent, combined)
+        self.assertEqual(no_category["status"], "no_category_in_city")
+        self.assertEqual(no_category, dict(run_pipeline(absent, self.base), fallback=False))
+        low_budget = request(budget_kzt=50000)
+        expected = run_pipeline(low_budget, self.base)
+        expected["meta"]["catalog_candidates"] += 1
+        expected["meta"]["diagnostics"]["over_budget"] += 1
+        actual = safe_pipeline_call(run_pipeline, low_budget, combined)
+        self.assertEqual(actual["status"], "no_eligible_candidates")
+        self.assertEqual(actual, dict(expected, fallback=False))
 
 
 if __name__ == "__main__":
