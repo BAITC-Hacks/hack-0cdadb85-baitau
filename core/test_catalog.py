@@ -6,6 +6,7 @@ import unittest
 
 from core import run_pipeline
 from core.test_generator import request
+from helpers.utils import load_contractors, normalize_request, safe_pipeline_call, validate_output
 
 
 CATALOG_PATH = Path(__file__).resolve().parents[1] / "given_data" / "hackathon dataset anonymized .csv"
@@ -34,6 +35,30 @@ class SharedCatalogTests(unittest.TestCase):
             self.assertGreaterEqual(row["price_from_kzt"], 0)
             self.assertTrue(row["categories"])
             self.assertTrue(row["event_formats"])
+
+    def test_helpers_loader_preserves_source(self):
+        expected = {row["id"]: row for row in self.catalog}
+        actual = {row["id"]: row for row in load_contractors()}
+        self.assertEqual(actual, expected)
+
+    def test_helpers_wrapper_with_real_catalog(self):
+        catalog = load_contractors()
+        cases = [
+            (request(), "matched"),
+            (request(date="2026-11-15"), "matched"),
+            (request(budget_kzt=1), "no_eligible_candidates"),
+            (request(city="missing-city"), "no_category_in_city"),
+            (request(language=None, duration_hours=None), "matched"),
+            (request(date="14.11.2026", budget_kzt="400 000 ₸", duration_hours="8"), "matched"),
+        ]
+        for query, status in cases:
+            with self.subTest(query=query):
+                result = safe_pipeline_call(run_pipeline, query, catalog)
+                self.assertFalse(result["fallback"])
+                self.assertTrue(validate_output(result))
+                self.assertEqual(result["status"], status)
+                expected = run_pipeline(normalize_request(query), self.catalog)
+                self.assertEqual(result, dict(expected, fallback=False))
 
     def test_demo_dates(self):
         expected = {
