@@ -45,7 +45,7 @@ def parse_list_field(value) -> list:
         if not isinstance(parsed, list):
             raise ValueError("List field must decode to a list")
         return parsed
-    return [value]
+    return [item.strip() for item in value.split("|") if item.strip()]
 
 
 def parse_bool(value) -> bool:

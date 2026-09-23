@@ -30,6 +30,7 @@ class UtilitiesTests(unittest.TestCase):
             self.assertEqual(utils.parse_list_field(value), [])
         for value in (["a"], '["a"]', "['a']", "a"):
             self.assertEqual(utils.parse_list_field(value), ["a"])
+        self.assertEqual(utils.parse_list_field("a| b"), ["a", "b"])
         for value in ('{"a": 1}', "('a',)", "[bad", 5):
             with self.assertRaises(ValueError):
                 utils.parse_list_field(value)

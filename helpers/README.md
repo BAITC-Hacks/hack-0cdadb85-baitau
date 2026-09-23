@@ -1,14 +1,16 @@
 # Data / Utils / Mock fallback
 
-Исходный датасет организаторов не найден в workspace. Поэтому `contractors.json`
-и `mock_data.json` пока отсутствуют: тестовые профили не выдаются за реальные.
-Для завершения подготовки требуется CSV/JSONL/JSON с 66 профилями.
+`contractors.json` содержит все 66 профилей из
+`given_data/hackathon dataset anonymized .csv`; `mock_data.json` — подходящие
+реальные профили для демо. Исходные busy_dates и provenance-флаги сохранены.
+Статистика: Алматы — 50, Астана — 15, Зарубежье — 1; synthetic — 13;
+пропусков цен/городов, неверных дат и невалидных записей — 0.
 
 Из корня репозитория:
 
 ```bash
-PYTHONDONTWRITEBYTECODE=1 python -m helpers.prepare_data /path/to/source.csv
-PYTHONDONTWRITEBYTECODE=1 python -m unittest helpers.test_utils -v
+PYTHONDONTWRITEBYTECODE=1 python -m helpers.prepare_data 'given_data/hackathon dataset anonymized .csv'
+PYTHONDONTWRITEBYTECODE=1 python -m unittest helpers.test_utils helpers.test_dataset -v
 ```
 
 Конвертер выводит колонки, типы list-полей и статистику, проверяет 66 уникальных
@@ -42,13 +44,13 @@ UI может показать `load_mock_data()` при ошибке загру
 Если mock отсутствует или повреждён, возвращается валидный пустой ответ
 с `fallback: true` и `meta.diagnostics.fallback_reason: "demo_data_unavailable"`.
 Это аварийный ответ, а не подтверждение отсутствия подрядчиков в реальном каталоге.
-После появления датасета broken-Core тест с реальным mock должен дать `matched`.
+Broken-Core тест с реальным mock возвращает `matched`.
 
 Поле `fallback: bool` добавлено согласно заданию; остальные имена полей сохранены.
 Совместимость проверена с `core.generator` из `origin/feature/auth`, коммит
 `898b2d1`: все три статуса, необязательные поля, provenance-флаги и лимит трёх
 карточек. Бюджет нормализуется в строго положительное целое согласно Core.
-`origin/main` на момент проверки содержит только README; `app.py` отсутствует.
+Исходный датасет опубликован в `origin/main` коммитом `713a37a`; `app.py` отсутствует.
 Совместные тесты после появления Core в checkout:
 
 ```bash
