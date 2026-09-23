@@ -6,6 +6,7 @@ Demonstrates end-to-end happy path and diagnostics in 3-4 clicks.
 
 from copy import deepcopy
 from datetime import date, datetime
+from html import escape
 import json
 import os
 import sys
@@ -19,7 +20,7 @@ st.set_page_config(
     page_title="Умный подбор event-подрядчиков",
     page_icon="✨",
     layout="wide",
-    initial_sidebar_state="expanded",
+    initial_sidebar_state="collapsed",
 )
 
 # Ensure project root is in sys.path
@@ -479,302 +480,213 @@ def render_html(html_str: str) -> None:
 # UI CSS Styling
 # -----------------------------------------------------------------------------
 def inject_custom_styles():
-    styles = """
+    render_html("""
     <style>
-    /* Card Container - Adaptive for Light and Dark themes */
-    .contractor-card {
-        border: 1px solid rgba(148, 163, 184, 0.25);
+    .stApp {
+        --market-text: var(--text-color, inherit);
+        --market-accent: var(--primary-color, #24755e);
+        --market-muted: var(--text-color, inherit);
+        --market-border: color-mix(in srgb, currentColor 18%, transparent);
+        --market-surface: var(--secondary-background-color, color-mix(in srgb, currentColor 5%, transparent));
+        --market-tint: color-mix(in srgb, var(--market-accent) 7%, transparent);
+        --market-radius: 16px;
+    }
+    [data-testid="stMainBlockContainer"] {
+        max-width: 1120px;
+        padding-top: 5rem;
+        padding-bottom: 4rem;
+    }
+    h1 { letter-spacing: -0.045em; line-height: 1.12 !important; padding-top: .35rem; }
+    h2, h3 { letter-spacing: -0.025em; }
+    [data-testid="stCaptionContainer"] { color: var(--market-muted); opacity: .78; }
+    [data-testid="stButton"] button,
+    [data-testid="stFormSubmitButton"] button {
+        min-height: 48px;
         border-radius: 12px;
-        padding: 20px;
-        margin-bottom: 20px;
-        background-color: var(--secondary-background-color, #ffffff);
-        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04);
-        transition: all 0.2s ease;
-    }
-    .contractor-card:hover {
-        box-shadow: 0 6px 14px rgba(0, 0, 0, 0.08);
-        border-color: rgba(59, 130, 246, 0.4);
-    }
-
-    /* Card Header */
-    .card-header-row {
-        display: flex;
-        justify-content: space-between;
-        align-items: flex-start;
-        margin-bottom: 8px;
-    }
-    .contractor-name {
-        font-size: 1.35rem;
-        font-weight: 700;
-        color: var(--text-color, #0f172a);
-        margin: 0;
-    }
-    .contractor-sub {
-        font-size: 0.95rem;
-        color: var(--text-color, #64748b);
-        opacity: 0.8;
-        margin-bottom: 12px;
-    }
-
-    /* Badges */
-    .badge-synthetic {
-        display: inline-block;
-        background: rgba(139, 92, 246, 0.15);
-        color: #8b5cf6;
-        font-size: 0.75rem;
         font-weight: 600;
-        padding: 3px 8px;
-        border-radius: 6px;
-        letter-spacing: 0.02em;
-        border: 1px solid rgba(139, 92, 246, 0.3);
     }
-    .badge-tag {
-        display: inline-block;
-        background: rgba(148, 163, 184, 0.18);
-        color: var(--text-color, #475569);
-        font-size: 0.85rem;
-        padding: 3px 10px;
-        border-radius: 6px;
-        margin-right: 6px;
-        margin-bottom: 6px;
+    [data-testid="stBaseButton-primary"], [data-testid="stBaseButton-primaryFormSubmit"] {
+        background: var(--market-accent) !important; border-color: var(--market-accent) !important;
+        color: #fff !important;
     }
-    .badge-price {
-        display: inline-block;
-        background: rgba(16, 185, 129, 0.15);
-        color: #10b981;
-        font-weight: 700;
-        font-size: 1rem;
-        padding: 4px 10px;
-        border-radius: 6px;
-        border: 1px solid rgba(16, 185, 129, 0.3);
-        margin-bottom: 12px;
+    [data-testid="stMultiSelect"] [data-tag] {
+        background: var(--market-surface); color: inherit;
+        border: 1px solid var(--market-border); border-radius: 8px;
     }
-
-    /* Primary Explanation Block (The Hero of the Card) */
+    [data-testid="stMultiSelect"] [data-tag] span,
+    [data-testid="stMultiSelect"] [data-tag] button { color: inherit; }
+    button:focus-visible { outline: 3px solid var(--market-accent) !important; outline-offset: 3px; }
+    .eyebrow {
+        color: var(--market-muted); font-size: .75rem; font-weight: 650;
+        letter-spacing: .13em; text-transform: uppercase; margin: 0 0 .75rem;
+    }
+    .st-key-role_customer, .st-key-role_contractor {
+        border: 1px solid var(--market-border) !important;
+        border-radius: var(--market-radius) !important;
+        padding: 1.1rem 1.25rem !important;
+        background: var(--background-color, transparent);
+    }
+    .st-key-role_customer:has(.role-selected),
+    .st-key-role_contractor:has(.role-selected) {
+        border-color: var(--market-accent) !important;
+        background: var(--market-tint);
+    }
+    .st-key-role_customer button, .st-key-role_contractor button {
+        background: transparent !important; color: var(--text-color, inherit) !important;
+        border: 0 !important; justify-content: flex-start; padding: 0;
+        min-height: 40px;
+    }
+    .st-key-role_customer button p, .st-key-role_contractor button p {
+        font-size: 1.35rem; font-weight: 650; letter-spacing: -.025em;
+    }
+    .st-key-role_customer button [data-testid="stMarkdownContainer"],
+    .st-key-role_contractor button [data-testid="stMarkdownContainer"] { width: 100%; text-align: left; }
+    .role-note { color: var(--market-muted); font-size: .8rem; }
+    .role-selected { color: var(--text-color, inherit); font-weight: 650; }
+    .st-key-customer_form, [data-testid="stForm"] {
+        border: 1px solid var(--market-border) !important;
+        border-radius: var(--market-radius) !important;
+        padding: 1.5rem !important;
+    }
+    [data-testid="stForm"] hr { margin: .75rem 0; }
+    .section-head { margin: .5rem 0 .5rem; }
+    .section-head h3 { font-size: 1.1rem; margin: 0; padding: 0; color: var(--text-color, inherit); }
+    .section-head p { color: var(--market-muted); margin: .3rem 0 0; font-size: .9rem; }
+    .section-number { color: var(--market-muted); margin-right: .6rem; font-size: .85rem; }
+    .contractor-card, .empty-state, .success-state {
+        border: 1px solid var(--market-border);
+        border-radius: var(--market-radius);
+        padding: 1.5rem;
+        margin: .3rem 0 1rem;
+        background: var(--background-color, transparent);
+        color: var(--text-color, inherit);
+        box-shadow: 0 4px 20px rgba(0,0,0,.035);
+        overflow-wrap: anywhere;
+    }
+    .card-header-row { display: flex; justify-content: space-between; gap: 1.5rem; align-items: flex-start; }
+    .contractor-name { font-size: 1.5rem; font-weight: 650; color: var(--text-color, inherit); margin: 0 0 .3rem; padding: 0; }
+    .contractor-sub { font-size: .95rem; color: var(--market-muted); margin: 0; }
+    .card-price { font-size: 1.35rem; font-weight: 650; letter-spacing: -.025em; white-space: nowrap; }
+    .card-price small { font-size: .85rem; font-weight: 400; color: var(--market-muted); }
+    .card-tags { display: flex; flex-wrap: wrap; gap: .4rem; margin-top: 1rem; }
+    .badge-tag, .badge-synthetic, .fallback-indicator {
+        display: inline-block; background: var(--market-surface); color: var(--text-color, inherit);
+        border: 1px solid var(--market-border); border-radius: 8px;
+        font-size: .78rem; line-height: 1.4; padding: .3rem .6rem;
+    }
     .explanation-box {
-        background-color: rgba(59, 130, 246, 0.08);
-        border-left: 4px solid #3b82f6;
-        border-radius: 0 8px 8px 0;
-        padding: 14px 16px;
-        margin-top: 14px;
-        margin-bottom: 10px;
+        margin-top: 1.2rem; padding: 1rem 1.15rem;
+        border-radius: 12px; border-left: 3px solid var(--market-accent);
+        background: var(--market-tint); color: var(--text-color, inherit);
     }
-    .explanation-label {
-        font-size: 0.8rem;
-        font-weight: 800;
-        color: #3b82f6;
-        letter-spacing: 0.05em;
-        text-transform: uppercase;
-        margin-bottom: 6px;
-        display: flex;
-        align-items: center;
-        gap: 6px;
-    }
-    .explanation-text {
-        font-size: 0.95rem;
-        line-height: 1.5;
-        color: var(--text-color, #1e293b);
-    }
-
-    /* Diagnostics List */
-    .diagnostics-box {
-        background-color: rgba(245, 158, 11, 0.1);
-        border: 1px solid rgba(245, 158, 11, 0.3);
-        border-radius: 10px;
-        padding: 16px 20px;
-        margin-top: 16px;
-    }
-    .diagnostics-title {
-        font-weight: 700;
-        color: #d97706;
-        font-size: 1.05rem;
-        margin-bottom: 8px;
-    }
-    .diagnostics-list {
-        margin: 0;
-        padding-left: 20px;
-        color: var(--text-color, #78350f);
-        font-size: 0.95rem;
-        line-height: 1.6;
-    }
-
-    /* Fallback demo mode badge */
-    .fallback-indicator {
-        display: inline-block;
-        background: rgba(245, 158, 11, 0.15);
-        color: #d97706;
-        font-size: 0.75rem;
-        padding: 2px 8px;
-        border-radius: 4px;
-        font-weight: 600;
-        margin-left: 8px;
-        border: 1px solid rgba(245, 158, 11, 0.3);
+    .explanation-label { font-size: .86rem; font-weight: 650; margin-bottom: .45rem; }
+    .explanation-text { font-size: .95rem; line-height: 1.65; }
+    .diagnostics-box { padding: .2rem 0 1rem; color: var(--text-color, inherit); }
+    .diagnostics-title { font-size: .9rem; font-weight: 600; margin-bottom: .65rem; }
+    .diagnostics-list { display: flex; flex-wrap: wrap; gap: .6rem; list-style: none; padding: 0; margin: 0; }
+    .diagnostics-list li { padding: .65rem .85rem; border: 1px solid var(--market-border); border-radius: 10px; font-size: .9rem; }
+    .empty-state { background: var(--market-surface); box-shadow: none; }
+    .empty-state h3, .success-state h2 { margin: 0 0 .6rem; padding: 0; }
+    .empty-state p, .success-state p { margin: 0; color: var(--market-muted); line-height: 1.6; }
+    .success-state { background: var(--market-tint); border-left: 3px solid var(--market-accent); }
+    @media (max-width: 800px) {
+        [data-testid="stMainBlockContainer"] { padding-top: 4.5rem; }
+        .card-header-row { flex-wrap: wrap; gap: .8rem; }
+        .contractor-card, .empty-state, .success-state { padding: 1.15rem; }
     }
     </style>
-    """
-    render_html(styles)
+    """)
 
 
-# -----------------------------------------------------------------------------
-# Result Rendering Functions
-# -----------------------------------------------------------------------------
+def render_form_section(number: str, title: str, hint: str = "") -> None:
+    render_html(f'<div class="section-head"><h3><span class="section-number">{escape(number)}</span>'
+                f'{escape(title)}</h3><p>{escape(hint)}</p></div>')
+
+
 def render_card(contractor: dict) -> None:
-    """Render single contractor card focusing prominently on the explanation."""
-    name = contractor.get("name") or contractor.get("anon_name") or "Подрядчик"
-    category = contractor.get("category", "")
-    city = contractor.get("city", "")
-    price_from = contractor.get("price_from_kzt", 0)
-    languages = contractor.get("languages", [])
-    max_hours = contractor.get("max_hours")
-    explanation = contractor.get("explanation", "")
-    synthetic = contractor.get("synthetic", False)
-    city_imputed = contractor.get("city_imputed", False)
-    price_imputed = contractor.get("price_imputed", False)
-
-    # Format tags
-    lang_str = ", ".join(languages) if languages else "любой"
-    hours_str = f"до {max_hours:g} часов" if max_hours else "без лимита по часам"
-
-    synthetic_badge_html = (
-        '<span class="badge-synthetic">🤖 Синтетический профиль</span>'
-        if synthetic
-        else ""
-    )
-
-    card_html = dedent(f"""
-    <div class="contractor-card">
+    """Show identity, price and factual explanation before secondary metadata."""
+    name = escape(str(contractor.get("name") or contractor.get("anon_name") or "Подрядчик"))
+    category = escape(str(contractor.get("category", "")))
+    city = escape(str(contractor.get("city", "")))
+    price = escape(format_kzt(contractor.get("price_from_kzt", 0)))
+    maximum = contractor.get("max_hours")
+    hours = f"до {maximum:g} ч" if maximum is not None else "Лимит часов не указан"
+    tags = "".join(f'<span class="badge-tag">{escape(str(lang))}</span>'
+                   for lang in contractor.get("languages", []))
+    tags += f'<span class="badge-tag">{escape(hours)}</span>'
+    if contractor.get("synthetic"):
+        tags += '<span class="badge-synthetic">Синтетический профиль</span>'
+    render_html(f"""
+    <article class="contractor-card">
         <div class="card-header-row">
-            <div>
-                <h3 class="contractor-name">{name}</h3>
-                <div class="contractor-sub">{category} · {city}</div>
-            </div>
-            <div>
-                {synthetic_badge_html}
-            </div>
-        </div>
-        <div>
-            <span class="badge-price">от {format_kzt(price_from)}</span>
-        </div>
-        <div>
-            <span class="badge-tag">🗣️ {lang_str}</span>
-            <span class="badge-tag">⏱️ {hours_str}</span>
+            <div><h3 class="contractor-name">{name}</h3>
+                <p class="contractor-sub">{category} · {city}</p></div>
+            <div class="card-price"><small>от</small> {price}</div>
         </div>
         <div class="explanation-box">
-            <div class="explanation-label">ПОЧЕМУ ЭТОТ ПОДРЯДЧИК ПОДХОДИТ</div>
-            <div class="explanation-text">{explanation}</div>
+            <div class="explanation-label">Почему подходит</div>
+            <div class="explanation-text">{escape(str(contractor.get('explanation', '')))}</div>
         </div>
-    </div>
-    """).strip()
-    render_html(card_html)
-
-    # Secondary metadata in collapsed expander
-    if city_imputed or price_imputed:
-        with st.expander("Подробнее о данных профиля", expanded=False):
-            if city_imputed:
-                st.caption("ℹ️ Город подрядчика был восстановлен или уточнен.")
-            if price_imputed:
-                st.caption("ℹ️ Базовая стоимость была рассчитана на основе медианы категории.")
+        <div class="card-tags">{tags}</div>
+    </article>
+    """)
+    if contractor.get("city_imputed") or contractor.get("price_imputed"):
+        with st.expander("О данных профиля", expanded=False):
+            if contractor.get("city_imputed"):
+                st.caption("Город восстановлен при подготовке каталога.")
+            if contractor.get("price_imputed"):
+                st.caption("Начальная цена восстановлена при подготовке каталога.")
 
 
 def render_diagnostics(meta: dict, req: dict) -> None:
-    """Render failure state diagnostics without showing 0-count items."""
+    """Present existing diagnostic counts without technical field names."""
     diagnostics = meta.get("diagnostics", {})
-    date_str = req.get("date", "выбранную дату")
-    budget_str = format_kzt(req.get("budget_kzt", 0))
-    format_str = req.get("event_format", "")
-    language_str = req.get("language")
-    duration = req.get("duration_hours")
-
-    bullet_points = []
-
-    busy = diagnostics.get("busy_on_date", 0)
-    if busy > 0:
-        bullet_points.append(f"**{busy}** заняты на дату {date_str}")
-
-    over = diagnostics.get("over_budget", 0)
-    if over > 0:
-        bullet_points.append(f"**{over}** начинаются выше вашего бюджета ({budget_str})")
-
-    unsupported_fmt = diagnostics.get("unsupported_format", 0)
-    if unsupported_fmt > 0:
-        bullet_points.append(f"**{unsupported_fmt}** не работают с форматом «{format_str}»")
-
-    unsupported_lang = diagnostics.get("unsupported_language", 0)
-    if unsupported_lang > 0 and language_str:
-        bullet_points.append(f"**{unsupported_lang}** не поддерживают язык «{language_str}»")
-
-    duration_long = diagnostics.get("duration_too_long", 0)
-    if duration_long > 0 and duration:
-        bullet_points.append(
-            f"**{duration_long}** имеют лимит длительности меньше запрошенных {duration:g} ч"
-        )
-
-    # Render diagnostics box
-    list_items = "".join(f"<li>{pt}</li>" for pt in bullet_points)
-    diag_html = dedent(f"""
-    <div class="diagnostics-box">
-        <div class="diagnostics-title">Почему никто не подошел:</div>
-        <ul class="diagnostics-list">
-            {list_items}
-        </ul>
-    </div>
-    """).strip()
-    render_html(diag_html)
+    labels = {
+        "over_budget": "выше бюджета",
+        "busy_on_date": "заняты на выбранную дату",
+        "unsupported_format": "не работают с этим форматом",
+        "unsupported_language": "не поддерживают нужный язык",
+        "duration_too_long": "не подходят по длительности",
+    }
+    items = "".join(f'<li><strong>{escape(str(diagnostics.get(key, 0)))}</strong> {label}</li>'
+                    for key, label in labels.items() if diagnostics.get(key, 0) > 0)
+    if items:
+        render_html(f'<div class="diagnostics-box"><div class="diagnostics-title">Что не совпало с запросом</div>'
+                    f'<ul class="diagnostics-list">{items}</ul></div>')
+        st.caption("Один подрядчик может не подойти по нескольким условиям.")
 
 
 def render_result(result: dict, original_req: dict) -> None:
-    """Visually differentiate all three contract statuses and render recommendations."""
+    """Render the existing statuses and disclose the demo response when used."""
     status = result.get("status")
-
-    # Matched State
+    if result.get("fallback"):
+        st.info("Показываем демо-подборку: сейчас не удалось получить ответ на ваш запрос.")
     if status == "matched":
         candidates = result.get("results", [])
-        total_returned = len(candidates)
-
-        col_title, col_info = st.columns([3, 1])
-        with col_title:
-            st.markdown(f"### {format_plural_results(total_returned)}")
-        with col_info:
-            if result.get("fallback"):
-                render_html('<div style="text-align:right;"><span class="fallback-indicator">Демо-режим</span></div>')
-
+        st.markdown(f"### {format_plural_results(len(candidates))}")
+        query = result.get("query") or original_req
+        st.caption(f"{query.get('city', '')} · {query.get('date', '')} · "
+                   f"{query.get('event_format', '')} · бюджет {format_kzt(query.get('budget_kzt', 0))}")
         if not candidates:
             st.info("Нет подходящих кандидатов для отображения.")
             return
-
-        # Render up to 3 cards
         for contractor in candidates[:3]:
             render_card(contractor)
-
-    # No Category in City State
     elif status == "no_category_in_city":
-        city = original_req.get("city", "")
-        category = original_req.get("category", "")
-        st.warning(f"В городе **{city}** нет подрядчиков категории **«{category}»**.")
-        st.info("💡 Рекомендация: выберите другой город или смените категорию.")
-
-    # No Eligible Candidates State
+        city = escape(str(original_req.get("city", "")))
+        category = escape(str(original_req.get("category", "")))
+        render_html(f'<section class="empty-state"><div class="eyebrow">Пока нет вариантов</div>'
+                    f'<h3>В городе {city} пока нет подрядчиков категории «{category}»</h3>'
+                    '<p>Выберите другой город или категорию и повторите подбор.</p></section>')
     elif status == "no_eligible_candidates":
-        city = original_req.get("city", "")
-        category = original_req.get("category", "")
-        st.warning(
-            f"В городе **{city}** есть подрядчики категории **«{category}»**, "
-            "но под условия заказа сейчас никто не подходит."
-        )
-        meta = result.get("meta", {})
-        render_diagnostics(meta, original_req)
-        st.info("💡 Рекомендация: попробуйте увеличить бюджет или выбрать другую дату.")
-
-    # Fallback or Unexpected Error
+        render_html('<section class="empty-state"><div class="eyebrow">Попробуем другие условия</div>'
+                    '<h3>Подрядчики есть, но никто не подходит под текущие условия</h3>'
+                    '<p>Попробуйте увеличить бюджет, изменить дату или дополнительные параметры.</p></section>')
+        render_diagnostics(result.get("meta", {}), original_req)
     else:
-        st.error(
-            "Не удалось получить рекомендации. Попробуйте изменить параметры поиска."
-        )
+        st.error("Не удалось получить рекомендации. Попробуйте повторить подбор.")
 
 
-# -----------------------------------------------------------------------------
-# Form Builder
-# -----------------------------------------------------------------------------
 def build_request_form(contractors: list[dict]) -> tuple[dict, bool]:
     """Render search form with 3-column primary grid and collapsed advanced options."""
     # Determine unique categories
@@ -792,7 +704,9 @@ def build_request_form(contractors: list[dict]) -> tuple[dict, bool]:
         else 0
     )
 
-    with st.container():
+    st.subheader("Расскажите о событии")
+    st.caption("Укажите условия — мы проверим доступность и предложим до 3 подходящих вариантов.")
+    with st.container(border=True, key="customer_form"):
         # Row 1: City, Date, Event Format
         col1, col2, col3 = st.columns(3)
         with col1:
@@ -807,7 +721,7 @@ def build_request_form(contractors: list[dict]) -> tuple[dict, bool]:
             )
         with col3:
             event_format = st.selectbox(
-                "Тип мероприятия",
+                "Формат мероприятия",
                 options=EVENT_FORMATS,
                 index=0,
             )
@@ -830,7 +744,7 @@ def build_request_form(contractors: list[dict]) -> tuple[dict, bool]:
                 format="%d",
                 help="Укажите максимальный бюджет в тенге",
             )
-            st.caption(f"Выбранный бюджет: **{format_kzt(budget_kzt)}**")
+            st.caption("Сравним с начальной стоимостью услуг.")
 
         # Row 3: Optional Parameters (Collapsed)
         duration_val = None
@@ -852,7 +766,7 @@ def build_request_form(contractors: list[dict]) -> tuple[dict, bool]:
 
             with exp_col2:
                 selected_lang = st.selectbox(
-                    "Язык ведения / общения",
+                    "Язык общения",
                     options=["Любой", "русский", "казахский", "английский"],
                     index=1,  # Default: русский
                 )
@@ -888,152 +802,109 @@ def build_request_form(contractors: list[dict]) -> tuple[dict, bool]:
 # Role Selector & Marketplace Flows
 # -----------------------------------------------------------------------------
 def render_role_selector() -> str:
-    """Render toggle between Customer and Contractor roles."""
+    """Two explicit role choices; callbacks update the existing navigation state."""
     if "current_role" not in st.session_state:
         st.session_state.current_role = "Заказчик"
 
-    col_role, _ = st.columns([1, 1])
-    with col_role:
-        st.write("**Выберите вашу роль на платформе:**")
-        role_options = ["Заказчик (подбор специалистов)", "Подрядчик (регистрация профиля)"]
-        default_label = (
-            role_options[0]
-            if st.session_state.current_role == "Заказчик"
-            else role_options[1]
-        )
-        if "role_radio_select" not in st.session_state:
-            st.session_state.role_radio_select = default_label
-
-        selected = st.radio(
-            "Роль пользователя",
-            options=role_options,
-            horizontal=True,
-            label_visibility="collapsed",
-            key="role_radio_select",
-        )
-        role = "Заказчик" if "Заказчик" in selected else "Подрядчик"
+    def select_role(role: str):
         st.session_state.current_role = role
-        return role
+        st.session_state.role_radio_select = (
+            "Заказчик (подбор специалистов)" if role == "Заказчик"
+            else "Подрядчик (регистрация профиля)"
+        )
+
+    st.subheader("Кто вы?")
+    columns = st.columns(2, gap="medium")
+    choices = [("Заказчик", "Я заказчик", "Найти подходящих подрядчиков", "customer"),
+               ("Подрядчик", "Я подрядчик", "Добавить свой профиль", "contractor")]
+    for column, (role, label, hint, key) in zip(columns, choices):
+        with column, st.container(border=True, key=f"role_{key}"):
+            active = role == st.session_state.current_role
+            marker = 'role-note role-selected' if active else 'role-note'
+            render_html(f'<div class="{marker}">{"Выбрано" if active else "Выбрать роль"}</div>')
+            st.button(label, key=f"choose_{key}", use_container_width=True,
+                      on_click=select_role, args=(role,))
+            st.caption(hint)
+    return st.session_state.current_role
 
 
 def render_contractor_form(available_categories: list[str]) -> None:
     """Render structured registration form for event professionals."""
     if st.session_state.get("contractor_registered"):
         last = st.session_state.get("last_contractor", {})
-        st.success(f"✅ Профиль «{last.get('anon_name')}» успешно добавлен!")
-
-        tags_str = ", ".join(last.get("categories", []))
-        langs_str = ", ".join(last.get("languages", []))
-        price_str = format_kzt(last.get("price_from_kzt", 0))
-        hours_str = f"до {last['max_hours']} ч" if last.get("max_hours") else "без привязки ко времени"
-
-        card_html = dedent(f"""
-        <div class="contractor-card">
+        render_html('<section class="success-state"><div class="eyebrow">Готово</div>'
+                    '<h2>Профиль создан</h2><p>Профиль уже участвует в подборе заказчиков.</p></section>')
+        name = escape(str(last.get("anon_name", "")))
+        categories_text = escape(", ".join(last.get("categories", [])))
+        city_text = escape(str(last.get("city", "")))
+        price = escape(format_kzt(last.get("price_from_kzt", 0)))
+        render_html(f"""
+        <article class="contractor-card">
             <div class="card-header-row">
-                <div>
-                    <h3 class="contractor-name">{last.get('anon_name')}</h3>
-                    <div class="contractor-sub">{tags_str} · {last.get('city')}</div>
-                </div>
-                <div>
-                    <span class="badge-synthetic">🤖 Новый профиль</span>
-                </div>
+                <div><h3 class="contractor-name">{name}</h3>
+                    <p class="contractor-sub">{categories_text} · {city_text}</p></div>
+                <div class="card-price"><small>от</small> {price}</div>
             </div>
-            <div>
-                <span class="badge-price">от {price_str}</span>
-            </div>
-            <div>
-                <span class="badge-tag">🗣️ {langs_str}</span>
-                <span class="badge-tag">⏱️ {hours_str}</span>
-                <span class="badge-tag">🆔 {last.get('id')}</span>
-            </div>
-            <div style="margin-top: 10px; font-size: 0.95rem; color: var(--text-color, #1e293b);">
-                {last.get('description')}
-            </div>
-        </div>
-        """).strip()
-        render_html(card_html)
-
-        col_b1, col_b2 = st.columns([1, 1])
+            <div class="explanation-box"><div class="explanation-label">О ваших услугах</div>
+                <div class="explanation-text">{escape(str(last.get('description', '')))}</div></div>
+        </article>
+        """)
+        col_b1, col_b2 = st.columns(2)
         with col_b1:
             def switch_to_customer():
                 st.session_state.current_role = "Заказчик"
                 st.session_state.role_radio_select = "Заказчик (подбор специалистов)"
                 st.session_state.contractor_registered = False
 
-            st.button("🔍 Перейти к подбору как заказчик", type="primary",
+            st.button("Перейти к поиску как заказчик", type="primary",
                       use_container_width=True, on_click=switch_to_customer)
         with col_b2:
-            if st.button("➕ Добавить ещё одного подрядчика", type="secondary", use_container_width=True):
+            if st.button("Добавить ещё один профиль", type="secondary", use_container_width=True):
                 st.session_state.contractor_registered = False
                 st.rerun()
         return
 
-    st.subheader("Регистрация профиля подрядчика")
-    st.caption("Укажите данные о ваших услугах, чтобы участвовать в AI-подборе для заказчиков")
+    st.subheader("Расскажите о своих услугах")
+    st.caption("Заполните профиль, чтобы заказчики могли найти вас по условиям мероприятия.")
 
     with st.form("contractor_registration_form"):
-        name = st.text_input(
-            "Название компании / Имя мастера*",
-            value="Nova Photo",
-            placeholder="Например: Nova Photo",
-        )
-
+        render_form_section("01", "Основная информация", "Как к вам обращаться и где вы работаете.")
         col1, col2 = st.columns(2)
         with col1:
-            city = st.selectbox("Город базирования*", options=CITIES, index=0)
+            name = st.text_input("Название компании или имя *", value="Nova Photo",
+                                 placeholder="Например: Nova Photo")
         with col2:
-            price_from_kzt = st.number_input(
-                "Стоимость услуг от (₸)*",
-                min_value=1000,
-                max_value=20000000,
-                value=180000,
-                step=10000,
-                format="%d",
-            )
-            st.caption(f"Будет показано как: **{format_kzt(price_from_kzt)}**")
+            city = st.selectbox("Город *", options=CITIES, index=0)
 
+        st.divider()
+        render_form_section("02", "Что вы предлагаете", "Можно выбрать несколько категорий и форматов.")
         default_cat = ["Фотограф"] if "Фотограф" in available_categories else [available_categories[0]]
-        categories = st.multiselect(
-            "Категории услуг*",
-            options=available_categories,
-            default=default_cat,
-        )
+        categories = st.multiselect("Категории услуг *", options=available_categories, default=default_cat)
+        event_formats = st.multiselect("Форматы мероприятий *", options=EVENT_FORMATS, default=["свадьба"])
 
+        st.divider()
+        render_form_section("03", "Условия работы", "Эти параметры помогут подобрать подходящие заказы.")
         col3, col4 = st.columns(2)
         with col3:
-            event_formats = st.multiselect(
-                "Форматы мероприятий*",
-                options=EVENT_FORMATS,
-                default=["свадьба"],
-            )
+            price_from_kzt = st.number_input("Цена от (₸) *", min_value=1000, max_value=20000000,
+                                             value=180000, step=10000, format="%d",
+                                             help="Минимальная стоимость заказа.")
         with col4:
-            languages = st.multiselect(
-                "Языки ведения / общения*",
-                options=["русский", "казахский", "английский"],
-                default=["русский"],
-            )
-
+            languages = st.multiselect("Языки общения *", options=["русский", "казахский", "английский"],
+                                       default=["русский"])
         no_hour_limit = st.checkbox("Работа не привязана к присутствию на площадке", value=False)
         if not no_hour_limit:
-            max_hours = st.number_input(
-                "Максимум часов на заказ (длительность)*",
-                min_value=1,
-                max_value=24,
-                value=8,
-                step=1,
-            )
+            max_hours = st.number_input("Максимум часов на заказ *", min_value=1, max_value=24, value=8, step=1,
+                                        help="Если отмечено отсутствие привязки к площадке, лимит при сохранении не учитывается.")
         else:
             max_hours = None
 
-        description = st.text_area(
-            "Описание услуг и специализации*",
-            value="Свадебная и репортажная фотография",
-            placeholder="Опишите опыт, стиль и ключевые преимущества...",
-        )
-
-        st.info("ℹ️ Календарь занятости можно будет настроить позже. При создании профиль считается доступным на все даты.")
-
-        submitted = st.form_submit_button("Зарегистрировать подрядчика", type="primary", use_container_width=True)
+        st.divider()
+        render_form_section("04", "Описание", "Расскажите о специализации, стиле работы и типичных мероприятиях.")
+        description = st.text_area("О ваших услугах *", value="Свадебная и репортажная фотография",
+                                   placeholder="Какие события вы снимаете, оформляете или проводите?", height=120)
+        st.caption("* Обязательные поля. При создании у профиля нет занятых дат — он участвует в подборе на любую дату.")
+        submitted = st.form_submit_button("Создать профиль", type="primary", use_container_width=True)
 
     if submitted:
         # Strict validation UX
@@ -1128,8 +999,9 @@ def main():
     contractors = load_all_contractors()
 
     # Header
-    st.title("Умный подбор event-подрядчиков")
-    st.caption("Двухсторонняя платформа: умный подбор для клиентов и регистрация исполнителей")
+    render_html('<div class="eyebrow">Умный подбор подрядчиков</div>')
+    st.title("Подрядчики для вашего события")
+    st.caption("Найдите подходящих специалистов или расскажите о своих услугах.")
 
     # Role Selector
     role = render_role_selector()
@@ -1145,7 +1017,7 @@ def main():
 
     # Sidebar: Demo scenarios guide & debug info
     with st.sidebar:
-        st.markdown("### 🎯 Сценарии для жюри")
+        st.markdown("### Сценарии для демо")
         st.markdown(
             """
             **1. Happy Path (Заказчик):**
@@ -1170,10 +1042,10 @@ def main():
             """
         )
         st.markdown("---")
-        st.markdown("### ⚙️ Статус системы")
+        st.markdown("### Информация о приложении")
         core_ready = run_pipeline is not None
         st.write(
-            f"**Core Engine:** {'🟢 Подключен' if core_ready else '🟡 Режим Mock'}"
+            f"**Подбор:** {'доступен' if core_ready else 'демо-режим'}"
         )
         st.write(f"**Активная роль:** {role}")
         st.write(f"**Всего подрядчиков в базе:** {len(contractors)}")
@@ -1181,7 +1053,7 @@ def main():
         if new_count > 0:
             st.write(f"**Новых профилей (сессия):** +{new_count}")
 
-        debug_mode = st.toggle("Режим отладки (Debug)", value=False)
+        debug_mode = st.toggle("Данные ответа для проверки", value=False)
         if debug_mode and st.session_state.result is not None:
             st.markdown("#### Сырой ответ (JSON):")
             st.json(st.session_state.result)
