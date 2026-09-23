@@ -99,6 +99,19 @@ class SharedCatalogTests(unittest.TestCase):
                     self.assertNotIn(row["id"], [c["id"] for c in result["results"]])
                     self.assertLessEqual(len(result["results"]), 3)
 
+    def test_demo_low_budget_diagnostics_through_helpers(self):
+        result = safe_pipeline_call(run_pipeline, request(budget_kzt=50000), load_contractors())
+        self.assertIs(result["fallback"], False)
+        self.assertEqual(result["status"], "no_eligible_candidates")
+        self.assertEqual(result["results"], [])
+        self.assertEqual(result["meta"], {
+            "catalog_candidates": 8, "eligible_candidates": 0, "returned": 0,
+            "diagnostics": {
+                "busy_on_date": 5, "over_budget": 8, "unsupported_format": 2,
+                "unsupported_language": 0, "duration_too_long": 2,
+            },
+        })
+
     def test_impossible_budget_and_missing_city(self):
         result = run_pipeline(request(budget_kzt=1), self.catalog)
         self.assertEqual(result["status"], "no_eligible_candidates")
